@@ -8,7 +8,7 @@ from OCP.AIS import AIS_Shape
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 
 from cq_viewer import wx_components
-from cq_viewer.cq import exec_file, execution_context, knife_cq
+from cq_viewer.cq import WPObject, exec_file, execution_context, knife_cq
 from cq_viewer.str_enum import StrEnum
 from cq_viewer.wx_components import MainFrame
 
@@ -49,17 +49,28 @@ class CQViewerContext:
 
             self.exec_and_display(fit=True)
 
+    def increment_wp_render_index(self, name=None):
+        execution_context.increment_wp_render_index(name)
+        self.exec_and_display()
+
+    def decrement_wp_render_index(self, name=None):
+        execution_context.decrement_wp_render_index(name)
+        self.exec_and_display()
+
     def exec_and_display(self, fit=False):
-        ctx = self.main_frame.canvas.context
         execution_context.reset()
         _locals = exec_file(self.file_path)
-        ctx.RemoveAll(False)
+        self.display(fit)
 
+    def display(self, fit=False):
+        ctx = self.main_frame.canvas.context
+        ctx.RemoveAll(False)
         for cq_obj in execution_context.cq_objects:
-            if isinstance(cq_obj["obj"], cq.Workplane):
-                compound = cq.Compound.makeCompound(cq_obj["obj"].objects)
+            if isinstance(cq_obj, WPObject):
+                index = execution_context.wp_render_index[cq_obj.name]
+                compound = cq.Compound.makeCompound(cq_obj.objects_by_index(index))
             else:
-                compound = cq.Compound.makeCompound(cq_obj["obj"])
+                compound = cq.Compound.makeCompound(cq_obj.obj)
 
             shape = AIS_Shape(compound.wrapped)
 

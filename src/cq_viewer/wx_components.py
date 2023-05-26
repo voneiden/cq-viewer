@@ -177,5 +177,14 @@ class MainFrame(wx.Frame):
 
     def on_key_down(self, event: wx.KeyEvent):
         # ctrl+o
-        if event.ControlDown() and event.GetKeyCode() == 79:
+        code = event.GetKeyCode()
+        if event.ControlDown() and code == 79:
             self.cq_viewer_ctx.open_file()
+        elif code == 90:
+            # z
+            self.cq_viewer_ctx.increment_wp_render_index()
+        elif code == 88:
+            # x
+            self.cq_viewer_ctx.decrement_wp_render_index()
+        else:
+            print(event.GetKeyCode())
