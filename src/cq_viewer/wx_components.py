@@ -1,8 +1,18 @@
 import typing
 
 import wx
-from OCP.AIS import AIS_DisplayMode, AIS_InteractiveContext
-from OCP.Aspect import Aspect_DisplayConnection, Aspect_TypeOfTriedronPosition
+from OCP.AIS import AIS_DisplayMode, AIS_InteractiveContext, AIS_SelectionScheme_Add
+from OCP.Aspect import (
+    Aspect_DisplayConnection,
+    Aspect_IS_SOLID,
+    Aspect_TOL_SOLID,
+    Aspect_TypeOfTriedronPosition,
+)
+from OCP.Graphic3d import (
+    Graphic3d_AspectFillArea3d,
+    Graphic3d_MaterialAspect,
+    Graphic3d_NameOfMaterial_Gold,
+)
 from OCP.OpenGl import OpenGl_GraphicDriver
 from OCP.Quantity import Quantity_Color
 from OCP.V3d import V3d_Viewer
@@ -21,8 +31,9 @@ class KeyboardHandlerMixin:
 
 
 class V3dPanel(KeyboardHandlerMixin, wx.Panel):
-    def __init__(self, parent):
+    def __init__(self, parent, cq_viewer_ctx: "CQViewerContext"):
         super().__init__(parent)
+        self.cq_viewer_ctx = cq_viewer_ctx
         self.display_connection = Aspect_DisplayConnection()
         self.graphics_driver = OpenGl_GraphicDriver(self.display_connection)
         self.viewer = V3d_Viewer(self.graphics_driver)
@@ -56,10 +67,12 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
         self.viewer.Redraw()
 
         self.Bind(wx.EVT_LEFT_DOWN, self.evt_left_down)
+        self.Bind(wx.EVT_LEFT_UP, self.evt_left_up)
         self.Bind(wx.EVT_MIDDLE_DOWN, self.evt_middle_down)
         self.Bind(wx.EVT_RIGHT_DOWN, self.evt_right_down)
 
         self._left_down_pos = False
+        self._left_dragged = False
         self._middle_down_pos = False
         self._right_down_pos = False
 
@@ -69,10 +82,27 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
 
     def evt_left_down(self, event):
         self._left_down_pos = event.GetPosition()
+        self._left_dragged = False
         x, y = self._left_down_pos
         self.view.StartRotation(x, y)
-        self.context.Select(True)
-        self.context.InitSelected()
+
+    def evt_left_up(self, event):
+        left_up_pos = event.GetPosition()
+        if not self._left_dragged:
+            self.context.SelectDetected(AIS_SelectionScheme_Add)
+            self.context.InitSelected()
+
+            if self.context.NbSelected() > len(self.cq_viewer_ctx.selected_shapes):
+                for i in range(len(self.cq_viewer_ctx.selected_shapes)):
+                    self.context.NextSelected()
+                self.cq_viewer_ctx.selected_shapes.append(self.context.SelectedShape())
+                self.viewer.Update()
+                self.cq_viewer_ctx.update_measurement()
+
+            elif self.cq_viewer_ctx.selected_shapes:
+                self.cq_viewer_ctx.selected_shapes = []
+                self.context.ClearSelected(True)
+                self.cq_viewer_ctx.update_measurement()
 
     def evt_middle_down(self, event):
         self._middle_down_pos = event.GetPosition()
@@ -99,6 +129,7 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
         x, y = pos
         if event.Dragging():
             if event.LeftIsDown():
+                self._left_dragged = True
                 self._left_down_pos = pos
                 self.view.Rotation(x, y)
 
@@ -113,6 +144,9 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
                 self.view.ZoomAtPoint(ox, -oy, x, -y)
         else:
             self.context.MoveTo(x, y, self.view, True)
+            self.context.InitDetected()
+            if self.context.MoreDetected():
+                self.cq_viewer_ctx.update_measurement(self.context.DetectedShape())
 
     def get_win_id(self):
         return self.GetHandle()
@@ -134,7 +168,7 @@ class MainFrame(wx.Frame):
         cq_viewer_ctx.main_frame = self
         self.cq_viewer_ctx = cq_viewer_ctx
 
-        self.canvas = V3dPanel(self)
+        self.canvas = V3dPanel(self, cq_viewer_ctx)
         self.Show()
         self.Maximize(True)
         self.canvas.set_window()
