@@ -110,6 +110,9 @@ class CQViewerContext:
                 compound = cq.Compound.makeCompound(cq_obj.obj)
 
             shape = AIS_Shape(compound.wrapped)
+            shape.SetHilightMode(AIS_Shaded)
+            style: Prs3d_Drawer = shape.HilightAttributes()
+            style.SetColor(Quantity_Color(Quantity_NOC_RED))
 
             ctx.Display(shape, False)
             ctx.Deactivate(shape)
@@ -288,3 +291,7 @@ def run():
     frame = MainFrame(cq_viewer_ctx=cq_viewer_ctx)
     knife_cq(frame)
     app.MainLoop()
+
+
+if __name__ == "__main__":
+    run()

@@ -14,7 +14,8 @@ from OCP.Graphic3d import (
     Graphic3d_NameOfMaterial_Gold,
 )
 from OCP.OpenGl import OpenGl_GraphicDriver
-from OCP.Quantity import Quantity_Color
+from OCP.Prs3d import Prs3d_Drawer
+from OCP.Quantity import Quantity_Color, Quantity_NOC_GREEN, Quantity_NOC_RED
 from OCP.V3d import V3d_Viewer
 
 if typing.TYPE_CHECKING:
@@ -57,7 +58,27 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
 
         ctx.SetDisplayMode(AIS_DisplayMode.AIS_Shaded, True)
         ctx.DefaultDrawer().SetFaceBoundaryDraw(True)
+        # style: Prs3d_Drawer = ctx.SelectionStyle()
+        style = Prs3d_Drawer()
+        style.SetColor(Quantity_Color(Quantity_NOC_GREEN))
+        fill_aspect = Graphic3d_AspectFillArea3d(
+            Aspect_IS_SOLID,
+            Quantity_Color(Quantity_NOC_RED),
+            Quantity_Color(Quantity_NOC_RED),
+            Aspect_TOL_SOLID,
+            1.0,
+            Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Gold),
+            Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Gold),
+        )
+        # style.SetShadingAspect(Prs3d_ShadingAspect(fill_aspect))
+        style.SetupOwnShadingAspect()
+        shading_aspect = style.ShadingAspect()
+        shading_aspect.SetColor(Quantity_Color(Quantity_NOC_RED))
 
+        # ctx.SetSelectionStyle(style)
+        # ctx.SetHighlightStyle(style)
+        # ctx.SetHighlightStyle(Prs3d_TypeOfHighlight_LocalSelected, style)
+        # ctx.SetHighlightStyle(Prs3d_TypeOfHighlight_LocalDynamic, style)
         # ctx.Display(test_ais(), True)
         self.view.SetProj(0, 0, 1)
         self.view.SetTwist(0)
