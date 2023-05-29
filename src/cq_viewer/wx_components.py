@@ -168,6 +168,8 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
             self.context.InitDetected()
             if self.context.MoreDetected():
                 self.cq_viewer_ctx.update_measurement(self.context.DetectedShape())
+            else:
+                self.cq_viewer_ctx.update_measurement(None)
 
     def get_win_id(self):
         return self.GetHandle()
