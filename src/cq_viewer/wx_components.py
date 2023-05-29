@@ -1,7 +1,7 @@
 import typing
 
 import wx
-from OCP.AIS import AIS_DisplayMode, AIS_InteractiveContext, AIS_SelectionScheme_Add
+from OCP.AIS import AIS_DisplayMode, AIS_InteractiveContext, AIS_SelectionScheme_Add, AIS_SelectionScheme_Remove
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_IS_SOLID,
@@ -107,16 +107,19 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
         x, y = self._left_down_pos
         self.view.StartRotation(x, y)
 
-    def evt_left_up(self, event):
-        left_up_pos = event.GetPosition()
+    def evt_left_up(self, event: wx.KeyEvent):
         if not self._left_dragged:
-            self.context.SelectDetected(AIS_SelectionScheme_Add)
+            if event.ShiftDown():
+                self.context.SelectDetected(AIS_SelectionScheme_Remove)
+            else:
+                self.context.SelectDetected(AIS_SelectionScheme_Add)
             self.context.InitSelected()
 
-            if self.context.NbSelected() > len(self.cq_viewer_ctx.selected_shapes):
-                for i in range(len(self.cq_viewer_ctx.selected_shapes)):
+            if self.context.NbSelected() and self.context.HasDetected():
+                self.cq_viewer_ctx.selected_shapes = []
+                while self.context.MoreSelected():
+                    self.cq_viewer_ctx.selected_shapes.append(self.context.SelectedShape())
                     self.context.NextSelected()
-                self.cq_viewer_ctx.selected_shapes.append(self.context.SelectedShape())
                 self.viewer.Update()
                 self.cq_viewer_ctx.update_measurement()
 
