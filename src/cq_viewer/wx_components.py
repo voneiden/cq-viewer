@@ -191,9 +191,10 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
                 self.context.NextDetected()
             if all_detected:
                 self.cq_viewer_ctx.update_measurement(all_detected)
+                self.cq_viewer_ctx.update_midpoint(all_detected[0])
             else:
                 self.cq_viewer_ctx.update_measurement(None)
-            self.cq_viewer_ctx.update_midpoints(all_detected)
+                self.cq_viewer_ctx.update_midpoint(None)
 
     def get_win_id(self):
         return self.GetHandle()

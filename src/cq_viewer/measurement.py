@@ -344,14 +344,8 @@ def measure_min_distance_between_shapes(
     return Measurement.blank()
 
 
-def create_midpoints(edges: list[TopoDS_Edge]) -> list[AIS_Shape]:
-    shapes = []
-    for edge in edges:
-        if edge.ShapeType() != TopAbs_EDGE:
-            continue
-
-        cq_edge = cq.Edge(edge)
-        midpoint_vector = cq_edge.positionAt(0.5)
-        vertex = cq.Vertex.makeVertex(*midpoint_vector.toTuple())
-        shapes.append(AIS_Shape(vertex.wrapped))
-    return shapes
+def create_midpoint(edge: TopoDS_Edge) -> AIS_Shape:
+    cq_edge = cq.Edge(edge)
+    midpoint_vector = cq_edge.positionAt(0.5)
+    vertex = cq.Vertex.makeVertex(*midpoint_vector.toTuple())
+    return AIS_Shape(vertex.wrapped)
