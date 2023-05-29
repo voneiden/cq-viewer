@@ -8,10 +8,11 @@ from OCP.AIS import AIS_Shaded, AIS_Shape
 from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import Quantity_Color, Quantity_NOC_RED
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+from OCP.TopoDS import TopoDS_Shape
 
 from cq_viewer import wx_components
 from cq_viewer.cq import WPObject, exec_file, execution_context, knife_cq
-from cq_viewer.measurement import Measurement, create_measurement
+from cq_viewer.measurement import Measurement, create_measurement, create_midpoints
 from cq_viewer.str_enum import StrEnum
 from cq_viewer.wx_components import MainFrame
 
@@ -32,7 +33,8 @@ class CQViewerContext:
 
         self.selected_shapes = []
         self.detected_shape = None
-        self.measurement = None
+        self.measurement = Measurement.blank()
+        self.midpoint_shapes: list[AIS_Shape] = []
 
     def watch_file(self):
         self.main_frame.file_system_watcher.RemoveAll()
@@ -102,10 +104,13 @@ class CQViewerContext:
         view.SetTwist(0)
         view.FitAll()
 
-    def update_measurement(self, detected_shape=None):
+    def update_measurement(self, detected_shapes: Optional[list[TopoDS_Shape]] = None):
+        print("Update measurements")
         if self.selected_shapes:
             measurement_shapes = self.selected_shapes[:]
-            if detected_shape:
+            if detected_shapes:
+                # We use only the first hit for measurements!
+                detected_shape = detected_shapes[0]
                 if not any(
                     detected_shape.IsSame(measurement_shape)
                     for measurement_shape in measurement_shapes
@@ -129,7 +134,7 @@ class CQViewerContext:
 
                 else:
                     print("No measurement")
-                self.detected_shape = detected_shape
+                self.detected_shape = detected_shapes[0] if detected_shapes else None
 
         elif self.measurement:
             ctx = self.main_frame.canvas.context
@@ -137,6 +142,47 @@ class CQViewerContext:
                 ctx.Remove(ais_shape, False)
             self.measurement: Optional[Measurement] = None
             self.main_frame.canvas.viewer.Update()
+        print("Update measurements done")
+
+    def update_midpoints(self, detected_shapes: Optional[list[TopoDS_Shape]] = None):
+        print("Update midpoints..")
+        ctx = self.main_frame.canvas.context
+        # TODO this might be unnecessarily fancy
+
+        midpoint_shapes = create_midpoints(detected_shapes)
+        print("Midpoint shapes", midpoint_shapes)
+        """
+        for old_midpoint_ais_shape in self.midpoint_shapes:
+            ctx.Remove(old_midpoint_ais_shape, False)
+        for midpoint_ais_shape in midpoint_shapes:
+            ctx.Display(midpoint_ais_shape, False)
+        """
+
+        unchanged = []
+        added = []
+
+        for old_ais_shape in self.midpoint_shapes:
+            old_shape: TopoDS_Shape = old_ais_shape.Shape()
+            if any(
+                (old_shape.IsSame(detected_shape) for detected_shape in detected_shapes)
+            ):
+                unchanged.append(old_shape)
+            else:
+                ctx.Remove(old_ais_shape, False)
+
+        for midpoint_ais_shape in midpoint_shapes:
+            midpoint_shape: TopoDS_Shape = midpoint_ais_shape.Shape()
+            if not any(
+                (
+                    midpoint_shape.IsSame(unchanged_shape)
+                    for unchanged_shape in unchanged
+                )
+            ):
+                ctx.Display(midpoint_ais_shape, False)
+
+        self.midpoint_shapes = midpoint_shapes
+        self.main_frame.canvas.viewer.Update()
+        print("Update done..")
 
 
 def run():
