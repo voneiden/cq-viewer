@@ -90,14 +90,17 @@ class CQViewerContext:
             ctx.Activate(shape, shape.SelectionMode_s(TopAbs_EDGE), True)
             ctx.Activate(shape, shape.SelectionMode_s(TopAbs_FACE), True)
 
-        if fit:
-            view = self.main_frame.canvas.view
-            view.SetProj(1, -1, 1)
-            view.SetTwist(0)
-            view.FitAll()
+            if fit:
+                self.fit_and_project()
 
         else:
             self.main_frame.canvas.viewer.Update()
+
+    def fit_and_project(self, x=1, y=-1, z=1):
+        view = self.main_frame.canvas.view
+        view.SetProj(1, -1, 1)
+        view.SetTwist(0)
+        view.FitAll()
 
     def update_measurement(self, detected_shape=None):
         if self.selected_shapes:

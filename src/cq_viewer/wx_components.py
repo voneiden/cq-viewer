@@ -1,7 +1,12 @@
 import typing
 
 import wx
-from OCP.AIS import AIS_DisplayMode, AIS_InteractiveContext, AIS_SelectionScheme_Add, AIS_SelectionScheme_Remove
+from OCP.AIS import (
+    AIS_DisplayMode,
+    AIS_InteractiveContext,
+    AIS_SelectionScheme_Add,
+    AIS_SelectionScheme_Remove,
+)
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_IS_SOLID,
@@ -118,7 +123,9 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
             if self.context.NbSelected() and self.context.HasDetected():
                 self.cq_viewer_ctx.selected_shapes = []
                 while self.context.MoreSelected():
-                    self.cq_viewer_ctx.selected_shapes.append(self.context.SelectedShape())
+                    self.cq_viewer_ctx.selected_shapes.append(
+                        self.context.SelectedShape()
+                    )
                     self.context.NextSelected()
                 self.viewer.Update()
                 self.cq_viewer_ctx.update_measurement()
@@ -246,5 +253,8 @@ class MainFrame(wx.Frame):
         elif code == 88:
             # x
             self.cq_viewer_ctx.decrement_wp_render_index()
+        elif code == 82:
+            # r
+            self.cq_viewer_ctx.fit_and_project()
         else:
             print(event.GetKeyCode())

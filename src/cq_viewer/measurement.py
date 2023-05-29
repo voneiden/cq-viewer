@@ -1,24 +1,31 @@
-import logging
-import pathlib
+"""
+OCCT claims to support calculating maximum extrema
+but either the feature was never quite finished or it
+has been removed. So only minimum distances.
+
+"""
+
+import math
 import sys
 from typing import Optional
 
 import cadquery as cq
-import wx
-from OCP.AIS import AIS_Line, AIS_Shaded, AIS_Shape
-from OCP.BRepExtrema import BRepExtrema_DistShapeShape, BRepExtrema_ExtCC
+from OCP.AIS import AIS_Line, AIS_Shape
+from OCP.BRepExtrema import (
+    BRepExtrema_DistShapeShape,
+    BRepExtrema_ExtCC,
+    BRepExtrema_ExtPF,
+)
+from OCP.Extrema import (
+    Extrema_ExtAlgo_Tree,
+    Extrema_ExtFlag_MAX,
+    Extrema_ExtFlag_MINMAX,
+)
 from OCP.Geom import Geom_CartesianPoint
-from OCP.gp import gp_Circ
-from OCP.Prs3d import Prs3d_Drawer
-from OCP.Quantity import Quantity_Color, Quantity_NOC_RED
+from OCP.gp import gp_Circ, gp_Pnt
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Edge, TopoDS_Face, TopoDS_Shape, TopoDS_Vertex
 from ocp_tessellate.ocp_utils import downcast_LUT
-
-from cq_viewer import wx_components
-from cq_viewer.cq import WPObject, exec_file, execution_context, knife_cq
-from cq_viewer.str_enum import StrEnum
-from cq_viewer.wx_components import MainFrame
 
 
 class Measurement:
@@ -98,6 +105,9 @@ def create_measurement(*shapes: TopoDS_Shape):
     elif type_set == {TopAbs_VERTEX}:
         return measure_vertices(*downcasted_shapes)
 
+    else:
+        return measure_generic(*downcasted_shapes)
+
 
 def measure_edges(*edges: TopoDS_Edge) -> Optional[Measurement]:
     measurements = {}
@@ -160,6 +170,55 @@ def measure_vertices(*vertices: TopoDS_Vertex) -> Optional[Measurement]:
         return measure_min_distance_between_shapes(*vertices)
 
 
+def measure_generic(*shapes: TopoDS_Shape) -> Optional[Measurement]:
+    print("Measure generic")
+    if len(shapes) == 2:
+        measurement = measure_min_distance_between_shapes(*shapes)
+        type_set = set([shape.ShapeType() for shape in shapes])
+        print("Generic type set", type_set)
+        if type_set == {TopAbs_VERTEX, TopAbs_FACE}:
+            vertex, face = (
+                (shapes[0], shapes[1])
+                if shapes[0].ShapeType() == TopAbs_VERTEX
+                else (shapes[1], shapes[0])
+            )
+            return measurement + measure_max_distance_between_vertex_and_face(
+                vertex, face
+            )
+        return measurement
+
+
+def measure_max_distance_between_vertex_and_face(
+    vertex: TopoDS_Vertex, face: TopoDS_Face
+):
+    calc = BRepExtrema_ExtPF(vertex, face, Extrema_ExtFlag_MAX, Extrema_ExtAlgo_Tree)
+    # pnt = gp_Pnt(*cq.Vertex(vertex).toTuple())
+    # surface = BRepAdaptor_Surface(face)
+    # calc = Extrema_ExtPS(pnt, surface, 1e-4, 1e-4, Extrema_ExtFlag_MIN, Extrema_ExtAlgo_Tree)
+    print("Results", calc.NbExt())
+
+    if calc.NbExt():
+        max_i = 1
+        max_dist = calc.SquareDistance(1)
+        for i in range(calc.NbExt() + 1)[2:]:
+            print("CHecking i", i)
+            if calc.SquareDistance(i) > max_dist:
+                max_i = i
+
+        dist = math.sqrt(calc.SquareDistance(max_i))
+        point_on_face: gp_Pnt = calc.Point(max_i)
+        vertex_point = Geom_CartesianPoint(gp_Pnt(*cq.Vertex(vertex).toTuple()))
+        print("ppp", point_on_face.Coord(), "->", vertex_point.Coord())
+        return Measurement(
+            {vertex, face},
+            {"max_distance": dist},
+            [AIS_Line(Geom_CartesianPoint(point_on_face), vertex_point)]
+            if dist > 0
+            else [],
+        )
+    return None
+
+
 def measure_max_distance_between_edges(edge1: TopoDS_Edge, edge2: TopoDS_Edge):
     calc = BRepExtrema_ExtCC(edge1, edge2)
     print("Got results", calc.NbExt())
@@ -190,7 +249,10 @@ def measure_min_distance_between_edges(edge1: TopoDS_Edge, edge2: TopoDS_Edge):
 
 
 def measure_min_distance_between_shapes(shape1: TopoDS_Shape, shape2: TopoDS_Shape):
-    calc = BRepExtrema_DistShapeShape(shape1, shape2)
+    calc = BRepExtrema_DistShapeShape(
+        shape1, shape2, Extrema_ExtFlag_MINMAX, Extrema_ExtAlgo_Tree
+    )
+    print("solutions", calc.NbSolution())
     if calc.IsDone():
         dist = calc.Value()
         p1 = calc.PointOnShape1(1)
