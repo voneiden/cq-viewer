@@ -82,6 +82,9 @@ class Measurement:
             self.ais_shapes + other.ais_shapes,
         )
 
+    def __bool__(self):
+        return bool(self.base_shapes and self.measurements and self.ais_shapes)
+
     @classmethod
     def blank(cls):
         return Measurement(set(), {}, [])

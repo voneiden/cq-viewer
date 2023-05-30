@@ -103,7 +103,6 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
         self._right_down_pos = False
 
         self.Bind(wx.EVT_MOUSEWHEEL, self.evt_mousewheel)
-
         self.Bind(wx.EVT_MOTION, self.evt_motion)
 
     def evt_left_down(self, event):
@@ -206,10 +205,35 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
     def set_window(self):
         from OCP.Xw import Xw_Window
 
+        print("canvas win id", self.get_win_id())
         window = Xw_Window(self.display_connection, self.get_win_id())
         self.view.SetWindow(window)
         if not window.IsMapped():
             window.Map()
+
+
+class InfoPanel(wx.Panel):
+    def __init__(self, parent, cq_viewer_ctx: "CQViewerContext", *args, **kwargs):
+        super().__init__(parent, *args, size=wx.Size(100, 60), **kwargs)
+        self.cq_viewer_ctx = cq_viewer_ctx
+        self.measurements_hash = None
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.text_elements: list[wx.StaticText] = []
+
+    def update_info(self):
+        measurements = self.cq_viewer_ctx.measurement.measurements
+        measurements_hash = hash(frozenset(measurements.items()))
+        if measurements_hash != self.measurements_hash:
+            self.sizer.Clear()
+            for t in self.text_elements:
+                t.Destroy()
+            self.text_elements = []
+
+            for k, v in measurements.items():
+                t = wx.StaticText(self, label=f"{k}: {v}")
+                self.text_elements.append(t)
+                self.sizer.Add(t)
+            self.SetSizerAndFit(self.sizer)
 
 
 class MainFrame(wx.Frame):
@@ -221,8 +245,16 @@ class MainFrame(wx.Frame):
         self.cq_viewer_ctx = cq_viewer_ctx
 
         self.canvas = V3dPanel(self, cq_viewer_ctx)
-        self.Show()
+        self.info_panel = InfoPanel(self, cq_viewer_ctx)
+
+        print("info panel win id", self.info_panel.GetHandle())
         self.Maximize(True)
+
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.sizer.Add(self.canvas, 1, flag=wx.EXPAND | wx.ALL)
+        self.sizer.Add(self.info_panel, 0, flag=wx.EXPAND | wx.ALL)
+        self.SetSizerAndFit(self.sizer)
+        self.Show()
         self.canvas.set_window()
         self.Layout()
         self.resize_timer = wx.Timer(self)

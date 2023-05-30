@@ -151,9 +151,10 @@ class CQViewerContext:
             ctx = self.main_frame.canvas.context
             for ais_shape in self.measurement.ais_shapes:
                 ctx.Remove(ais_shape, False)
-            self.measurement: Optional[Measurement] = None
+            self.measurement = Measurement.blank()
             self.main_frame.canvas.viewer.Update()
         print("Update measurements done")
+        self.main_frame.info_panel.update_info()
 
     def clean_up_selected_midpoints(self) -> bool:
         ctx = self.main_frame.canvas.context
