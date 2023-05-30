@@ -15,7 +15,7 @@ from cq_viewer import wx_components
 from cq_viewer.cq import WPObject, exec_file, execution_context, knife_cq
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
-from cq_viewer.util import downcast
+from cq_viewer.util import downcast, same_topods_vertex
 from cq_viewer.wx_components import MainFrame
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,16 @@ class CQViewerContext:
         self.selected_shapes = []
         self.detected_shape = None
         self.measurement = Measurement.blank()
-        self.midpoint_ais_shape: Optional[AIS_Shape] = None
+        self.midpoint: Optional[AIS_Shape] = None
+        self.selected_midpoints: list[AIS_Shape] = []
+
+    @property
+    def selected_vx(self):
+        return [
+            shape
+            for shape in self.selected_shapes
+            if shape.ShapeType() == TopAbs_VERTEX
+        ]
 
     def watch_file(self):
         self.main_frame.file_system_watcher.RemoveAll()
@@ -146,58 +155,85 @@ class CQViewerContext:
             self.main_frame.canvas.viewer.Update()
         print("Update measurements done")
 
+    def clean_up_selected_midpoints(self) -> bool:
+        ctx = self.main_frame.canvas.context
+        needs_update = False
+        for selected_midpoint in self.selected_midpoints[:]:
+            if not any(
+                same_topods_vertex(selected_midpoint.Shape(), selected_vx)
+                for selected_vx in self.selected_vx
+            ):
+                self.selected_midpoints.remove(selected_midpoint)
+                print("MP: Removing selected midpoint")
+                ctx.Remove(selected_midpoint, False)
+                needs_update = True
+        return needs_update
+
     def update_midpoint(self, detected_shape: Optional[TopoDS_Shape] = None):
-        # TODO midpoint should stay visible if it is selected!
+        # A midpoint must be kept visible if
+        # 1) create_midpoint suggests the same midpoint
+        # 2) highlighted vertex is the same
+        # 3) it is selected
+
         print("Update midpoints..")
         ctx = self.main_frame.canvas.context
-        # TODO this might be unnecessarily fancy
+        needs_update = False
 
+        needs_update |= self.clean_up_selected_midpoints()
+
+        new_midpoint = None
+        highlighted_vertex = None
         if detected_shape:
-            print("sha")
-            if detected_shape.ShapeType() == TopAbs_EDGE:
-                print("edg")
+            shape_type = detected_shape.ShapeType()
+            if shape_type == TopAbs_EDGE:
+                new_midpoint = create_midpoint(detected_shape)
+                if any(
+                    same_topods_vertex(new_midpoint.Shape(), selected_vx)
+                    for selected_vx in self.selected_vx
+                ):
+                    # Don't need to show if it is already selected
+                    print("MP: Already selected - NOP")
+                    new_midpoint = None
 
-                edge = cq.Edge(detected_shape)
-                midpoint_ais_shape = create_midpoint(edge.wrapped)
-                if midpoint_ais_shape:
-                    new_midpoint = cq.Vertex(midpoint_ais_shape.Shape()).Center()
-                    if self.midpoint_ais_shape:
-                        old_midpoint = cq.Vertex(
-                            self.midpoint_ais_shape.Shape()
-                        ).Center()
-                        if new_midpoint == old_midpoint:
-                            # Same midpoint, nop
-                            print("Same EDGE midpoint, nop")
-                            return
+            elif shape_type == TopAbs_VERTEX:
+                highlighted_vertex = detected_shape
 
-                        print("Remove midpoint, changed")
-                        ctx.Remove(self.midpoint_ais_shape, False)
-                    print("Show new midpoint)")
-                    gp_Pnt()
-                    ctx.Display(midpoint_ais_shape, True)
-                    self.midpoint_ais_shape = midpoint_ais_shape
-                    return
-            elif (
-                detected_shape.ShapeType() == TopAbs_VERTEX and self.midpoint_ais_shape
+        if self.midpoint:
+            if any(
+                same_topods_vertex(self.midpoint.Shape(), selected_vx)
+                for selected_vx in self.selected_shapes
+                if selected_vx.ShapeType() == TopAbs_VERTEX
             ):
-                print("vert")
-                new_v = cq.Vertex(detected_shape).Center()
-                old_v = cq.Vertex(self.midpoint_ais_shape.Shape()).Center()
-                if new_v == old_v:
-                    print("VX is same")
-                    return
-            elif self.midpoint_ais_shape:
-                print("REM REM REM")
-                ctx.Remove(self.midpoint_ais_shape, False)
-                self.main_frame.canvas.viewer.Update()
-                self.midpoint_ais_shape = None
-                return
+                self.selected_midpoints.append(self.midpoint)
+                print("MP: Moving current midpoint to selected_midpoints")
+                self.midpoint = None
 
-        if self.midpoint_ais_shape:
-            print("Remove midpoint")
-            ctx.Remove(self.midpoint_ais_shape, False)
+            elif new_midpoint and same_topods_vertex(
+                self.midpoint.Shape(), new_midpoint.Shape()
+            ):
+                # NOP - already showing the correct things
+                print("MP: Already visible - NOP")
+                new_midpoint = None
+            elif highlighted_vertex and same_topods_vertex(
+                self.midpoint.Shape(), highlighted_vertex
+            ):
+                # NOP - already showing the correct things
+                print("MP: Already highlighted - NOP")
+                new_midpoint = None
+            else:
+                print("MP: Removing unneeded midpoint")
+                ctx.Remove(self.midpoint, False)
+                self.midpoint = None
+                needs_update = True
+
+        if new_midpoint and self.midpoint is None:
+            print("MP: Showing new midpoint")
+            self.midpoint = new_midpoint
+            ctx.Display(self.midpoint, False)
+            needs_update = True
+
+        if needs_update:
             self.main_frame.canvas.viewer.Update()
-            self.midpoint_ais_shape = None
 
 
 def run():

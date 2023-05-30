@@ -127,13 +127,17 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
                         self.context.SelectedShape()
                     )
                     self.context.NextSelected()
-                self.viewer.Update()
+
                 self.cq_viewer_ctx.update_measurement()
+                self.cq_viewer_ctx.clean_up_selected_midpoints()
+                self.viewer.Update()
 
             elif self.cq_viewer_ctx.selected_shapes:
                 self.cq_viewer_ctx.selected_shapes = []
                 self.context.ClearSelected(True)
                 self.cq_viewer_ctx.update_measurement()
+                self.cq_viewer_ctx.clean_up_selected_midpoints()
+                self.viewer.Update()
 
     def evt_middle_down(self, event):
         self._middle_down_pos = event.GetPosition()
