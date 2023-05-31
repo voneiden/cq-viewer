@@ -12,7 +12,13 @@ from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Shape, TopoDS_Vertex
 
 from cq_viewer import wx_components
-from cq_viewer.cq import WPObject, exec_file, execution_context, knife_cq
+from cq_viewer.cq import (
+    B123dBuildPart,
+    WPObject,
+    exec_file,
+    execution_context,
+    knife_cq,
+)
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
 from cq_viewer.util import downcast, same_topods_vertex
@@ -85,10 +91,12 @@ class CQViewerContext:
     def display(self, fit=False):
         ctx = self.main_frame.canvas.context
         ctx.RemoveAll(False)
-        for cq_obj in execution_context.cq_objects:
+        for cq_obj in execution_context.display_objects:
             if isinstance(cq_obj, WPObject):
-                index = execution_context.wp_render_index[cq_obj.name]
+                index = execution_context.cq_wp_render_index[cq_obj.name]
                 compound = cq.Compound.makeCompound(cq_obj.objects_by_index(index))
+            elif isinstance(cq_obj, B123dBuildPart):
+                compound = cq_obj.obj.part
             else:
                 compound = cq.Compound.makeCompound(cq_obj.obj)
 
