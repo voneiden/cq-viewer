@@ -159,7 +159,6 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
             self.view.ZoomAtPoint(x, y, x_step, y)
 
     def evt_motion(self, event):
-        print("evt motion")
         pos = event.GetPosition()
         x, y = pos
         if event.Dragging():
@@ -178,17 +177,14 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
                 self._right_down_pos = pos
                 self.view.ZoomAtPoint(ox, -oy, x, -y)
         else:
-            print("move to")
             self.context.MoveTo(x, y, self.view, True)
-            print("init detect")
             self.context.InitDetected()
             all_detected = []
             while self.context.MoreDetected():
-                print("get shape")
                 if self.context.HasDetectedShape():
                     all_detected.append(self.context.DetectedShape())
                 else:
-                    print("!!! WASNT A SHAPE!")
+                    print("!!! Detected was NOT a shape")
 
                 print("Next")
                 self.context.NextDetected()

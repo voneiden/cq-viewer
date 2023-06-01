@@ -5,23 +5,22 @@ from typing import Optional
 import cadquery as cq
 import wx
 from OCP.AIS import AIS_Shaded, AIS_Shape
-from OCP.gp import gp_Pnt
 from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import Quantity_Color, Quantity_NOC_RED
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
-from OCP.TopoDS import TopoDS_Shape, TopoDS_Vertex
+from OCP.TopoDS import TopoDS_Shape
 
 from cq_viewer import wx_components
-from cq_viewer.cq import (
+from cq_viewer.interface import (
     B123dBuildPart,
-    WPObject,
+    CQWorkplane,
     exec_file,
     execution_context,
     knife_cq,
 )
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
-from cq_viewer.util import downcast, same_topods_vertex
+from cq_viewer.util import same_topods_vertex
 from cq_viewer.wx_components import MainFrame
 
 logger = logging.getLogger(__name__)
@@ -92,15 +91,17 @@ class CQViewerContext:
         ctx = self.main_frame.canvas.context
         ctx.RemoveAll(False)
         for cq_obj in execution_context.display_objects:
-            if isinstance(cq_obj, WPObject):
+            if isinstance(cq_obj, CQWorkplane):
                 index = execution_context.cq_wp_render_index[cq_obj.name]
-                compound = cq.Compound.makeCompound(cq_obj.objects_by_index(index))
+                compound = cq.Compound.makeCompound(cq_obj.objects_by_index(index)).wrapped
             elif isinstance(cq_obj, B123dBuildPart):
                 compound = cq_obj.obj.part
+                if compound is None:
+                    continue
             else:
-                compound = cq.Compound.makeCompound(cq_obj.obj)
+                compound = cq.Compound.makeCompound(cq_obj.obj).wrapped
 
-            shape = AIS_Shape(compound.wrapped)
+            shape = AIS_Shape(compound)
             shape.SetHilightMode(AIS_Shaded)
             style: Prs3d_Drawer = shape.HilightAttributes()
             style.SetColor(Quantity_Color(Quantity_NOC_RED))
@@ -124,7 +125,6 @@ class CQViewerContext:
         view.FitAll()
 
     def update_measurement(self, detected_shapes: Optional[list[TopoDS_Shape]] = None):
-        print("Update measurements")
         if self.selected_shapes:
             measurement_shapes = self.selected_shapes[:]
             if detected_shapes:
@@ -161,7 +161,6 @@ class CQViewerContext:
                 ctx.Remove(ais_shape, False)
             self.measurement = Measurement.blank()
             self.main_frame.canvas.viewer.Update()
-        print("Update measurements done")
         self.main_frame.info_panel.update_info()
 
     def clean_up_selected_midpoints(self) -> bool:
@@ -184,7 +183,6 @@ class CQViewerContext:
         # 2) highlighted vertex is the same
         # 3) it is selected
 
-        print("Update midpoints..")
         ctx = self.main_frame.canvas.context
         needs_update = False
 
