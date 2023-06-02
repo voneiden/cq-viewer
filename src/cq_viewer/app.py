@@ -4,6 +4,7 @@ from typing import Optional
 
 import cadquery as cq
 import wx
+from build123d import BuildLine
 from OCP.AIS import AIS_Shaded, AIS_Shape
 from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import Quantity_Color, Quantity_NOC_PURPLE, Quantity_NOC_RED
@@ -94,6 +95,8 @@ class CQViewerContext:
         self.display(fit)
 
     def display(self, fit=False):
+        # TODO this sucks too, pls fix
+
         ctx = self.main_frame.canvas.context
         ctx.RemoveAll(False)
         for cq_obj in execution_context.display_objects:
@@ -103,20 +106,23 @@ class CQViewerContext:
                     cq_obj.objects_by_index(index)
                 ).wrapped
             elif isinstance(cq_obj, B123dBuildPart):
-                compound = cq_obj.obj.part
+                if isinstance(cq_obj.obj, BuildLine):
+                    compound = cq_obj.obj.line.wrapped
+                else:
+                    compound = cq_obj.obj.part
 
-                if cq_obj.obj.pending_edges:
-                    self.display_pending_edges(cq_obj.obj.pending_edges)
+                    if cq_obj.obj.pending_edges:
+                        self.display_pending_edges(cq_obj.obj.pending_edges)
 
-                if cq_obj.obj.pending_faces:
-                    self.display_pending_faces(cq_obj.obj.pending_faces)
+                    if cq_obj.obj.pending_faces:
+                        self.display_pending_faces(cq_obj.obj.pending_faces)
 
-                for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
-                    if failed_builder.pending_edges:
-                        self.display_pending_edges(failed_builder.pending_edges)
-                if compound is None:
-                    continue
-                compound = compound.wrapped
+                    for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
+                        if failed_builder.pending_edges:
+                            self.display_pending_edges(failed_builder.pending_edges)
+                    if compound is None:
+                        continue
+                    compound = compound.wrapped
             else:
                 compound = cq.Compound.makeCompound(cq_obj.obj).wrapped
 

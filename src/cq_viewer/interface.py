@@ -1,3 +1,4 @@
+import inspect
 import logging
 import traceback
 from collections import defaultdict
@@ -116,6 +117,8 @@ def show_object(obj, name=None, options=None, **kwargs):
     """
     Similar to CQ-Editor, this method can be used to display
     various objects in the viewer.
+
+    TODO this sucks make it better
     """
     if options:
         kwargs.update(options)
@@ -124,15 +127,14 @@ def show_object(obj, name=None, options=None, **kwargs):
         if name is None:
             name = f"wp-{len(execution_context.cq_wp_objects)}"
         cq_obj = CQWorkplane(obj, name=name, **kwargs)
-    elif bd and isinstance(obj, bd.BuildPart):
+    elif bd and isinstance(obj, bd.Builder):
         if name is None:
             name = f"part-{len(execution_context.bp_objects)}"
         cq_obj = B123dBuildPart(obj, name=name, **kwargs)
     else:
         if name is None:
             name = f"obj-{len(execution_context.generic_objects)}"
-        else:
-            cq_obj = DisplayObject(obj, name=name, **kwargs)
+        cq_obj = DisplayObject(obj, name=name, **kwargs)
 
     execution_context.add_display_object(cq_obj)
 
@@ -219,3 +221,14 @@ def knife_b123d(win):
 
     # Builder.__enter__ = wrapper_enter
     Builder.__exit__ = wrapper_exit
+
+
+def view():
+    from build123d.build_common import Builder
+
+    ctx = Builder._get_context()
+
+    if ctx and ctx._python_frame == inspect.currentframe().f_back:
+        show_object(ctx)
+    else:
+        print("Not builder ctx")
