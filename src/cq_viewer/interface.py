@@ -1,7 +1,13 @@
+import logging
+import traceback
 from collections import defaultdict
 from typing import Optional
 
 import wx
+
+from cq_viewer.conf import FAILED_BUILDERS_KEY
+
+logger = logging.getLogger(__name__)
 
 try:
     import cadquery as cq
@@ -42,11 +48,18 @@ class B123dBuildPart(DisplayObject):
     def __init__(self, obj, name, **options):
         super().__init__(obj, name, **options)
 
+    @property
+    def sketching(self) -> bool:
+        return self.obj.pending_edges or self.obj.pending_faces
+
 
 class ExecutionContext:
     def __init__(self):
         self.display_objects: list[DisplayObject] = []
         self.cq_wp_render_index = defaultdict(lambda: 0)
+        self.bp_sketching = defaultdict(lambda: False)
+
+        self.restore_projection = None
 
     def add_display_object(self, cq_obj: DisplayObject):
         self.display_objects.append(cq_obj)
@@ -58,6 +71,13 @@ class ExecutionContext:
     def cq_wp_objects(self) -> list[CQWorkplane]:
         # noinspection PyTypeChecker
         return list(filter(lambda x: isinstance(x, CQWorkplane), self.display_objects))
+
+    @property
+    def bp_objects(self) -> list[B123dBuildPart]:
+        # noinspection PyTypeChecker
+        return list(
+            filter(lambda x: isinstance(x, B123dBuildPart), self.display_objects)
+        )
 
     @property
     def generic_objects(self) -> list[DisplayObject]:
@@ -104,12 +124,13 @@ def show_object(obj, name=None, options=None, **kwargs):
         if name is None:
             name = f"wp-{len(execution_context.cq_wp_objects)}"
         cq_obj = CQWorkplane(obj, name=name, **kwargs)
+    elif bd and isinstance(obj, bd.BuildPart):
+        if name is None:
+            name = f"part-{len(execution_context.bp_objects)}"
+        cq_obj = B123dBuildPart(obj, name=name, **kwargs)
     else:
         if name is None:
             name = f"obj-{len(execution_context.generic_objects)}"
-
-        if bd and isinstance(obj, bd.BuildPart):
-            cq_obj = B123dBuildPart(obj, name=name, **kwargs)
         else:
             cq_obj = DisplayObject(obj, name=name, **kwargs)
 
@@ -137,3 +158,64 @@ def knife_cq(win):
 
     cq.Workplane.original_newObject = cq.Workplane.newObject
     cq.Workplane.newObject = yielding_newObject
+
+
+def knife_b123d(win):
+    """
+    Tweak build123d
+
+    * Exception handling for builders to avoid crashing
+    * wx yield in __exit__ of a builder to keep UI somewhat responsive
+    * Empty BuildSketch handling to support (BuildLine visualization)
+
+    """
+    from build123d.build_common import Builder
+
+    # NOTE: monkey patching __enter__ is not so straightforward
+    # because it messes the `inspect.currentframe().f_back` hat trick
+    # that build123d uses to keep track of build context
+
+    og_exit = Builder.__exit__
+
+    def get_root_builder(builder: Builder):
+        while builder.builder_parent:
+            builder = builder.builder_parent
+        return builder
+
+    def tb_file_names_and_linenos(tb):
+        stack = traceback.extract_tb(tb)
+        stack.reverse()
+        return [f"{frame.filename}:{frame.lineno} {frame.line}" for frame in stack]
+
+    def wrapper_exit(self, exception_type, exception_value, tb):
+        wx.SafeYield(win)
+        if exception_type is not None:
+            stack_str = "\n".join(tb_file_names_and_linenos(tb))
+            if self.builder_parent:
+                logger.debug(
+                    f"Unclean exit\n{stack_str}\n{exception_type}: {exception_value}"
+                )
+                return
+
+            logger.warning(
+                f"Builder failed\n{stack_str}\n{exception_type.__name__}: {exception_value})"
+            )
+            return True
+        try:
+            return og_exit(self, exception_type, exception_value, traceback)
+        except RuntimeError as ex:
+            # Builder.__exit__ can raise RuntimeError when
+            # the Builder returns a None. From the viewers perspective
+            # we don't want this to be a fatal error as most likely this
+            # is just an incomplete BuildSketch
+
+            root_builder = get_root_builder(self)
+            failed_builders = getattr(root_builder, FAILED_BUILDERS_KEY, [])
+            failed_builders.append(self)
+            setattr(root_builder, FAILED_BUILDERS_KEY, failed_builders)
+            if self.builder_parent:
+                return
+            return True
+
+    # Builder.__enter__ = wrapper_enter
+    Builder.__exit__ = wrapper_exit

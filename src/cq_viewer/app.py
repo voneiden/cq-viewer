@@ -6,16 +6,18 @@ import cadquery as cq
 import wx
 from OCP.AIS import AIS_Shaded, AIS_Shape
 from OCP.Prs3d import Prs3d_Drawer
-from OCP.Quantity import Quantity_Color, Quantity_NOC_RED
+from OCP.Quantity import Quantity_Color, Quantity_NOC_PURPLE, Quantity_NOC_RED
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Shape
 
-from cq_viewer import wx_components
+from cq_viewer import ais, wx_components
+from cq_viewer.conf import FAILED_BUILDERS_KEY
 from cq_viewer.interface import (
     B123dBuildPart,
     CQWorkplane,
     exec_file,
     execution_context,
+    knife_b123d,
     knife_cq,
 )
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
@@ -51,6 +53,10 @@ class CQViewerContext:
             for shape in self.selected_shapes
             if shape.ShapeType() == TopAbs_VERTEX
         ]
+
+    @property
+    def ctx(self):
+        return self.main_frame.canvas.context
 
     def watch_file(self):
         self.main_frame.file_system_watcher.RemoveAll()
@@ -93,36 +99,68 @@ class CQViewerContext:
         for cq_obj in execution_context.display_objects:
             if isinstance(cq_obj, CQWorkplane):
                 index = execution_context.cq_wp_render_index[cq_obj.name]
-                compound = cq.Compound.makeCompound(cq_obj.objects_by_index(index)).wrapped
+                compound = cq.Compound.makeCompound(
+                    cq_obj.objects_by_index(index)
+                ).wrapped
             elif isinstance(cq_obj, B123dBuildPart):
                 compound = cq_obj.obj.part
+
+                if cq_obj.obj.pending_edges:
+                    self.display_pending_edges(cq_obj.obj.pending_edges)
+
+                if cq_obj.obj.pending_faces:
+                    self.display_pending_faces(cq_obj.obj.pending_faces)
+
+                for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
+                    if failed_builder.pending_edges:
+                        self.display_pending_edges(failed_builder.pending_edges)
                 if compound is None:
                     continue
+                compound = compound.wrapped
             else:
                 compound = cq.Compound.makeCompound(cq_obj.obj).wrapped
 
             shape = AIS_Shape(compound)
             shape.SetHilightMode(AIS_Shaded)
+            ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
             style: Prs3d_Drawer = shape.HilightAttributes()
             style.SetColor(Quantity_Color(Quantity_NOC_RED))
 
             ctx.Display(shape, False)
-            ctx.Deactivate(shape)
-            ctx.Activate(shape, shape.SelectionMode_s(TopAbs_VERTEX), True)
-            ctx.Activate(shape, shape.SelectionMode_s(TopAbs_EDGE), True)
-            ctx.Activate(shape, shape.SelectionMode_s(TopAbs_FACE), True)
+            self.activate_selection(shape)
 
-            if fit:
-                self.fit_and_project()
+        if fit:
+            self.fit_and_project()
+        self.main_frame.canvas.viewer.Update()
 
-        else:
-            self.main_frame.canvas.viewer.Update()
+    def display_pending_edges(self, pending_edges):
+        """build123d BuildLine"""
+        # topods_edges: list[TopoDS_Edge] = [edge.wrapped for edge in pending_edges]
+        compound = cq.Compound.makeCompound(pending_edges).wrapped
+        shape = AIS_Shape(compound)
+        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
+        self.ctx.Display(shape, False)
+
+    def display_pending_faces(self, pending_faces):
+        """build123d BuildSketch"""
+        # topods_faces: list[TopoDS_Face] = [edge.wrapped for edge in pending_faces]
+        compound = cq.Compound.makeCompound(pending_faces).wrapped
+        shape = AIS_Shape(compound)
+        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
+        self.ctx.Display(shape, False)
 
     def fit_and_project(self, x=1, y=-1, z=1):
         view = self.main_frame.canvas.view
         view.SetProj(1, -1, 1)
         view.SetTwist(0)
         view.FitAll()
+
+    def activate_selection(self, ais_shape: AIS_Shape):
+        ctx = self.main_frame.canvas.context
+        ctx.Deactivate(ais_shape)
+        ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_VERTEX), True)
+        ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_EDGE), True)
+        ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_FACE), True)
 
     def update_measurement(self, detected_shapes: Optional[list[TopoDS_Shape]] = None):
         if self.selected_shapes:
@@ -248,6 +286,7 @@ def run():
     cq_viewer_ctx = CQViewerContext()
     frame = MainFrame(cq_viewer_ctx=cq_viewer_ctx)
     knife_cq(frame)
+    knife_b123d(frame)
     app.MainLoop()
 
 

@@ -186,7 +186,6 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
                 else:
                     print("!!! Detected was NOT a shape")
 
-                print("Next")
                 self.context.NextDetected()
             if all_detected:
                 self.cq_viewer_ctx.update_measurement(all_detected)
