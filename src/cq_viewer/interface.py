@@ -130,6 +130,8 @@ def show_object(obj, name=None, options=None, **kwargs):
     elif bd and isinstance(obj, bd.Builder):
         if name is None:
             name = f"part-{len(execution_context.bp_objects)}"
+        # TODO need to grab the actual object out
+        # reference to obj is mutable..r
         cq_obj = B123dBuildPart(obj, name=name, **kwargs)
     else:
         if name is None:

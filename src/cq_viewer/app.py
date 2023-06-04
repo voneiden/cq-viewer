@@ -109,12 +109,12 @@ class CQViewerContext:
                 if isinstance(cq_obj.obj, BuildLine):
                     compound = cq_obj.obj.line.wrapped
                 else:
-                    compound = cq_obj.obj.part
+                    compound = getattr(cq_obj.obj, "part", None)
 
-                    if cq_obj.obj.pending_edges:
+                    if getattr(cq_obj.obj, "pending_edges", None):
                         self.display_pending_edges(cq_obj.obj.pending_edges)
 
-                    if cq_obj.obj.pending_faces:
+                    if getattr(cq_obj.obj, "pending_faces", None):
                         self.display_pending_faces(cq_obj.obj.pending_faces)
 
                     for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
