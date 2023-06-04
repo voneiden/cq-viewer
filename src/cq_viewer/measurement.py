@@ -248,11 +248,7 @@ def face_position_factory(face: TopoDS_Face):
     surface = BRepAdaptor_Surface(face)
     u_min, u_max, v_min, v_max = BRepTools.UVBounds_s(face)
 
-    print("uvbounds", u_min, u_max, "v", v_min, v_max)
-    print("woot", surface.FirstUParameter(), surface.LastUParameter())
-
     def face_position(u: float, v: float) -> gp_Pnt:
-        print("fp u", u_min + (u_max - u_min) * u, "v", v_min + (v_max - v_min) * v)
         return surface.Value(u_min + (u_max - u_min) * u, v_min + (v_max - v_min) * v)
 
     return face_position
@@ -295,18 +291,31 @@ def face_edge_distance_squared_factory(face: TopoDS_Face):
     return face_edge_distance_squared
 
 
-def face_face_distance_squared(
-    params,
-    fpf1: Callable[[float, float], gp_Pnt],
-    fpf2: Callable[[float, float], gp_Pnt],
-    maximize=False,
-):
-    up1, uv1, up2, uv2 = params
-    face1_point = fpf1(up1, uv1)
-    face2_point = fpf2(up2, uv2)
-    if maximize:
-        return -face1_point.SquareDistance(face2_point)
-    return face1_point.SquareDistance(face2_point)
+def face_face_distance_squared_factory(face1: TopoDS_Face, face2: TopoDS_Face):
+    def face_face_distance_squared(
+        params,
+        fpf1: Callable[[float, float], gp_Pnt],
+        fpf2: Callable[[float, float], gp_Pnt],
+        maximize=False,
+    ):
+        up1, uv1, up2, uv2 = params
+        face1_point = fpf1(up1, uv1)
+        face2_point = fpf2(up2, uv2)
+
+        classifier1 = BRepClass_FaceClassifier(face1, face1_point, 1e-7)
+        classifier2 = BRepClass_FaceClassifier(face2, face2_point, 1e-7)
+        face1_point_within_face1 = classifier1.State() in [TopAbs_IN, TopAbs_ON]
+        face2_point_within_face2 = classifier2.State() in [TopAbs_IN, TopAbs_ON]
+
+        if maximize:
+            if not (face1_point_within_face1 and face2_point_within_face2):
+                return inf
+            return -face1_point.SquareDistance(face2_point)
+        if not (face1_point_within_face1 and face2_point_within_face2):
+            return -inf
+        return face1_point.SquareDistance(face2_point)
+
+    return face_face_distance_squared
 
 
 def face_vertex_distance_squared_factory(face: TopoDS_Face, vertex: TopoDS_Vertex):
@@ -345,6 +354,8 @@ def edge_vertex_distance_squared_factory(vertex: TopoDS_Vertex):
 
 
 def optimize_face_face(face1: TopoDS_Face, face2: TopoDS_Face, maximize=False):
+    face_face_distance_squared = face_face_distance_squared_factory(face1, face2)
+
     param_bounds = [(0, 1), (0, 1), (0, 1), (0, 1)]
 
     initial_guess = [0.5, 0.5, 0.5, 0.5]
