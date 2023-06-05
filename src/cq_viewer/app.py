@@ -119,6 +119,8 @@ class CQViewerContext:
 
                     for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
                         if failed_builder.pending_edges:
+                            print("Displaying failed builder pending edges")
+                            print("failed builder", failed_builder)
                             self.display_pending_edges(failed_builder.pending_edges)
                     if compound is None:
                         continue

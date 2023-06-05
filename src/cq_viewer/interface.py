@@ -5,6 +5,9 @@ from collections import defaultdict
 from typing import Optional
 
 import wx
+from build123d import BuildSketch
+from OCP.gp import gp_Pln
+from OCP.TopoDS import TopoDS_Compound
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
 
@@ -46,12 +49,48 @@ class CQWorkplane(DisplayObject):
 
 
 class B123dBuildPart(DisplayObject):
+    obj: "bd.Builder"
+
     def __init__(self, obj, name, **options):
         super().__init__(obj, name, **options)
 
     @property
     def sketching(self) -> bool:
-        return self.obj.pending_edges or self.obj.pending_faces
+        print("Deprecated")
+        return bool(
+            self.obj.pending_edges
+            or self.obj.pending_faces
+            or self._failed_sketch_build
+        )
+
+    @property
+    def _failed_sketch_build(self) -> Optional["bd.Builder"]:
+        failed_builders = getattr(self.obj, FAILED_BUILDERS_KEY, [])
+        failed_sketch_builders = [
+            builder for builder in failed_builders if isinstance(builder, BuildSketch)
+        ]
+        if failed_sketch_builders:
+            return failed_sketch_builders[0]
+        return None
+
+    @property
+    def sketch(self) -> Optional[tuple[TopoDS_Compound, Optional[gp_Pln]]]:
+        builder = self._failed_sketch_build
+        if not builder:
+            builder = self.obj
+
+        if builder.to_combine:
+            compound = builder.to_combine[0].wrapped
+        else:
+            return None
+
+        workplanes = builder.workplanes_context.workplanes
+        if workplanes:
+            workplane: Optional[gp_Pln] = workplanes[0].wrapped
+        else:
+            workplane = None
+
+        return compound, workplane
 
 
 class ExecutionContext:
@@ -164,36 +203,28 @@ def knife_cq(win):
     cq.Workplane.newObject = yielding_newObject
 
 
-def knife_b123d(win):
-    """
-    Tweak build123d
+def get_root_builder(builder):
+    while builder.builder_parent:
+        builder = builder.builder_parent
+    return builder
 
-    * Exception handling for builders to avoid crashing
-    * wx yield in __exit__ of a builder to keep UI somewhat responsive
-    * Empty BuildSketch handling to support (BuildLine visualization)
 
-    """
+def tb_file_names_and_linenos(tb):
+    stack = traceback.extract_tb(tb)
+    stack.reverse()
+    return [f"{frame.filename}:{frame.lineno} {frame.line}" for frame in stack]
+
+
+def monkeypatch_b123d_builder_exit_factory(win):
     from build123d.build_common import Builder
-
-    # NOTE: monkey patching __enter__ is not so straightforward
-    # because it messes the `inspect.currentframe().f_back` hat trick
-    # that build123d uses to keep track of build context
 
     og_exit = Builder.__exit__
 
-    def get_root_builder(builder: Builder):
-        while builder.builder_parent:
-            builder = builder.builder_parent
-        return builder
-
-    def tb_file_names_and_linenos(tb):
-        stack = traceback.extract_tb(tb)
-        stack.reverse()
-        return [f"{frame.filename}:{frame.lineno} {frame.line}" for frame in stack]
-
-    def wrapper_exit(self, exception_type, exception_value, tb):
+    def monkeypatch_b123d_builder_exit(self, exception_type, exception_value, tb):
         wx.SafeYield(win)
         if exception_type is not None:
+            self._current.reset(self._reset_tok)
+
             stack_str = "\n".join(tb_file_names_and_linenos(tb))
             if self.builder_parent:
                 logger.debug(
@@ -221,8 +252,25 @@ def knife_b123d(win):
                 return
             return True
 
-    # Builder.__enter__ = wrapper_enter
-    Builder.__exit__ = wrapper_exit
+    return monkeypatch_b123d_builder_exit
+
+
+def knife_b123d(win):
+    """
+    Tweak build123d
+
+    * Exception handling for builders to avoid crashing
+    * wx yield in __exit__ of a builder to keep UI somewhat responsive
+    * Empty BuildSketch handling to support (BuildLine visualization)
+
+    """
+    from build123d.build_common import Builder
+
+    # NOTE: monkey patching __enter__ is not so straightforward
+    # because it messes the `inspect.currentframe().f_back` hat trick
+    # that build123d uses to keep track of build context
+
+    Builder.__exit__ = monkeypatch_b123d_builder_exit_factory(win)
 
 
 def view():
