@@ -2,25 +2,15 @@ import logging
 import pathlib
 from typing import Optional
 
-import cadquery as cq
 import wx
-from build123d import BuildLine
-from OCP.AIS import AIS_Shaded, AIS_Shape, AIS_InteractiveObject
+from OCP.AIS import AIS_Shaded, AIS_Shape
 from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import Quantity_Color, Quantity_NOC_PURPLE, Quantity_NOC_RED
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Shape
 
 from cq_viewer import ais, wx_components
-from cq_viewer.conf import FAILED_BUILDERS_KEY
-from cq_viewer.interface import (
-    B123dBuildPart,
-    CQWorkplane,
-    exec_file,
-    execution_context,
-    knife_b123d,
-    knife_cq,
-)
+from cq_viewer.interface import exec_file, execution_context, knife_b123d, knife_cq
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
 from cq_viewer.util import same_topods_vertex
@@ -96,64 +86,46 @@ class CQViewerContext:
         self.display(fit, reset_projection)
 
     def display(self, fit=False, reset_projection=False):
-        # TODO this sucks too, pls fix
-        print("DISPLAY!!!")
+        print("Display..")
         ctx = self.main_frame.canvas.context
         view = self.main_frame.canvas.view
         previous_immediate_update = view.SetImmediateUpdate(False)
         ctx.RemoveAll(False)
-        sketching = False
-        sketch_workplanes = []
-        for cq_obj in execution_context.display_objects:
-            if isinstance(cq_obj, CQWorkplane):
-                index = execution_context.cq_wp_render_index[cq_obj.name]
-                compound = cq.Compound.makeCompound(
-                    cq_obj.objects_by_index(index)
-                ).wrapped
-            elif isinstance(cq_obj, B123dBuildPart):
-                if isinstance(cq_obj.obj, BuildLine):
-                    compound = cq_obj.obj.line.wrapped
-                else:
-                    compound = getattr(cq_obj.obj, "part", None)
 
-                    sketch = cq_obj.sketch
-                    if sketch:
-                        sketch_compound, sketch_workplane = sketch
-                        self.display_compound(sketch_compound)
-                        sketching = True
-                        sketch_workplanes.append(sketch_workplane)
+        sketch_states = [dp_obj.sketch for dp_obj in execution_context.display_objects]
+        active_sketches = [sketch for sketch in sketch_states if sketch]
 
-                    if compound is None:
-                        continue
-                    compound = compound.wrapped
-            elif isinstance(cq_obj.obj, AIS_InteractiveObject):
-                compound = None
-                ctx.Display(cq_obj.obj, False)
-            else:
-                compound = cq.Compound.makeCompound(cq_obj.obj).wrapped
-
-            self.display_compound(compound)
-        if execution_context.bp_sketching != sketching:
-            if sketching:
+        if len(active_sketches) == 1:
+            shape, plane = active_sketches[0]
+            if not execution_context.bp_sketching:
                 print("Started sketching")
                 execution_context.bp_sketching = True
-                if execution_context.bp_autosketch and sketch_workplanes:
-                    sketch_workplane = sketch_workplanes[0]
-                    # self.view.SetProj(0, 0, 1)
-                    #         self.view.SetTwist(0)
+                if execution_context.bp_autosketch and plane:
                     view.SetViewOrientationDefault()
-                    wp_ax = sketch_workplane.Axis().Direction()
+                    wp_ax = plane.Axis().Direction()
                     view.SetProj(wp_ax.X(), wp_ax.Y(), wp_ax.Z())
                     view.SetTwist(0)
                     fit = True
                     reset_projection = False
-
-            else:
+            self.display_ais_shape(AIS_Shape(shape))
+        else:
+            if execution_context.bp_sketching:
                 print("Stopped sketching")
                 execution_context.bp_sketching = False
                 view = self.main_frame.canvas.view
                 view.Reset(False)
                 fit = True
+
+            # Default behaviour
+            for dp_obj in execution_context.display_objects:
+                ais_object = dp_obj.ais_object
+
+                if ais_object:
+                    if isinstance(ais_object, AIS_Shape):
+                        self.display_ais_shape(ais_object)
+                    else:
+                        ctx.Display(ais_object, False)
+
         if reset_projection:
             self.isometric()
 
@@ -162,37 +134,20 @@ class CQViewerContext:
             self.fit()
         self.main_frame.canvas.viewer.Update()
 
-    def display_compound(self, compound, selectable=True):
-        if compound is None:
+    def display_ais_shape(self, ais_shape: AIS_Shape, selectable=True):
+        if ais_shape is None:
             return
         ctx = self.main_frame.canvas.context
-        shape = AIS_Shape(compound)
-        shape.SetHilightMode(AIS_Shaded)
-        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
-        style: Prs3d_Drawer = shape.HilightAttributes()
+        ais_shape.SetHilightMode(AIS_Shaded)
+        ais.set_color(ais_shape, Quantity_Color(Quantity_NOC_PURPLE))
+        style: Prs3d_Drawer = ais_shape.HilightAttributes()
         style.SetColor(Quantity_Color(Quantity_NOC_RED))
 
-        ctx.Display(shape, False)
+        ctx.Display(ais_shape, False)
         if selectable:
-            self.activate_selection(shape)
+            self.activate_selection(ais_shape)
 
-    def display_pending_edges(self, pending_edges):
-        """build123d BuildLine"""
-        # topods_edges: list[TopoDS_Edge] = [edge.wrapped for edge in pending_edges]
-        compound = cq.Compound.makeCompound(pending_edges).wrapped
-        shape = AIS_Shape(compound)
-        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
-        self.ctx.Display(shape, False)
-
-    def display_pending_faces(self, pending_faces):
-        """build123d BuildSketch"""
-        # topods_faces: list[TopoDS_Face] = [edge.wrapped for edge in pending_faces]
-        compound = cq.Compound.makeCompound(pending_faces).wrapped
-        shape = AIS_Shape(compound)
-        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
-        self.ctx.Display(shape, False)
-
-    def fit(self, x=1, y=-1, z=1):
+    def fit(self):
         view = self.main_frame.canvas.view
         view.FitAll(0.2, False)
 

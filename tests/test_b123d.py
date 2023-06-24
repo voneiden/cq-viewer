@@ -8,11 +8,13 @@ from build123d import (
     Circle,
     Cylinder,
     Line,
-    extrude, make_face,
+    extrude,
+    make_face,
 )
 
 from cq_viewer.interface import (
     B123dBuildPart,
+    ExecutionContext,
     knife_b123d,
     monkeypatch_b123d_builder_exit_factory,
 )
@@ -40,27 +42,23 @@ def test_b123d_unfinished_line_builder_knifed(knife_build123d):
 
 
 def test_b123d_sketching_detection(knife_build123d):
+    context = ExecutionContext()
     with BuildPart() as part:
-        assert not B123dBuildPart(part, "test").sketching
-        assert not B123dBuildPart(part, "test").sketch
+        assert not B123dBuildPart(context, part, "test").sketch
         with BuildSketch():
             Circle(radius=5)
-        assert B123dBuildPart(part, "test").sketching
-        assert B123dBuildPart(part, "test").sketch
+        assert B123dBuildPart(context, part, "test").sketch
         extrude(amount=5)
-        assert not B123dBuildPart(part, "test").sketching
-        assert not B123dBuildPart(part, "test").sketch
+        assert not B123dBuildPart(context, part, "test").sketch
 
     with BuildPart() as part:
-        assert not B123dBuildPart(part, "test").sketching
-        assert not B123dBuildPart(part, "test").sketch
+        assert not B123dBuildPart(context, part, "test").sketch
         with BuildSketch():
             with BuildLine():
                 Line((0, 0), (1, 1))
 
     assert part.builder_parent is None
-    assert B123dBuildPart(part, "test").sketch
-    assert B123dBuildPart(part, "test").sketching
+    assert B123dBuildPart(context, part, "test").sketch
 
     with BuildPart() as part:
         with BuildSketch():
@@ -71,7 +69,8 @@ def test_b123d_sketching_detection(knife_build123d):
             make_face()
         extrude(amount=3)
 
-    assert not B123dBuildPart(part, "test").sketch
+    assert not B123dBuildPart(context, part, "test").sketch
+
 
 def test_b123d_part_parent_behaviour():
     with BuildPart() as part:

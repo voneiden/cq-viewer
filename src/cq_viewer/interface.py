@@ -6,8 +6,9 @@ from typing import Optional
 
 import wx
 from build123d import BuildSketch, Compound
+from OCP.AIS import AIS_InteractiveObject, AIS_Shape
 from OCP.gp import gp_Pln
-from OCP.TopoDS import TopoDS_Compound
+from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
 
@@ -19,23 +20,85 @@ except ImportError:
     cq = None
 
 try:
-    import build123d as bd
+    import build123d as b3d
 except ImportError:
-    bd = None
+    b3d = None
 
-if cq is None and bd is None:
+if cq is None and b3d is None:
     raise RuntimeError("Neither cadquery or build123d was found installed")
 
 
+def make_compound(shapes: list[TopoDS_Shape]) -> TopoDS_Compound:
+    compound = TopoDS_Compound()
+    compound_builder = TopoDS_Builder()
+    compound_builder.MakeCompound(compound)
+    for shape in shapes:
+        compound_builder.Add(compound, shape)
+    return compound
+
+
+def extract_shape(obj) -> Optional[TopoDS_Shape]:
+    if obj is None:
+        return None
+
+    if isinstance(obj, list):
+        shapes = [extract_shape(item) for item in obj]
+        shape_count = len(shapes)
+        if shape_count == 0:
+            return None
+        elif shape_count == 1:
+            return shapes[0]
+        else:
+            return make_compound(shapes)
+
+    if cq:
+        if isinstance(obj, cq.Workplane):
+            return extract_shape(obj.objects)
+        if isinstance(obj, cq.Shape):
+            return obj.wrapped
+    if b3d:
+        if isinstance(obj, b3d.Shape):
+            return obj.wrapped
+        elif isinstance(obj, b3d.ShapeList):
+            return extract_shape(list(obj))
+        elif isinstance(obj, b3d.BuildPart):
+            return extract_shape(obj.part)
+
+    if isinstance(obj, (TopoDS_Shape)):
+        return obj
+
+    raise ValueError(f"Unable to extract shape from {type(obj)}!")
+
+
 class DisplayObject:
-    def __init__(self, obj, name, **options):
+    def __init__(self, context, obj, name, **options):
+        self.context = context
         self.obj = obj
         self.name = name
+        self.options = options
+
+    @property
+    def shape(self) -> TopoDS_Shape:
+        return extract_shape(self.obj)
+
+    @property
+    def ais_object(self) -> Optional[AIS_InteractiveObject]:
+        if isinstance(self.obj, AIS_InteractiveObject):
+            return self.obj
+        shape = self.shape
+        if shape:
+            ais_shape = AIS_Shape(shape)
+            return ais_shape
+        return None
+
+    @property
+    def sketch(self):
+        return None
 
 
 class CQWorkplane(DisplayObject):
-    def __init__(self, obj, name, **options):
-        super().__init__(obj, name, **options)
+    def __init__(self, context, obj, name, **options):
+        super().__init__(context, obj, name, **options)
 
         self.wp_history = [obj]
         o = obj
@@ -49,22 +112,13 @@ class CQWorkplane(DisplayObject):
 
 
 class B123dBuildPart(DisplayObject):
-    obj: "bd.Builder"
+    obj: "b3d.Builder"
 
-    def __init__(self, obj, name, **options):
-        super().__init__(obj, name, **options)
-
-    @property
-    def sketching(self) -> bool:
-        print("Deprecated")
-        return bool(
-            self.obj.pending_edges
-            or self.obj.pending_faces
-            or self._failed_sketch_build
-        )
+    def __init__(self, context, obj, name, **options):
+        super().__init__(context, obj, name, **options)
 
     @property
-    def _failed_sketch_build(self) -> Optional["bd.Builder"]:
+    def _failed_sketch_build(self) -> Optional["b3d.Builder"]:
         failed_builders = getattr(self.obj, FAILED_BUILDERS_KEY, [])
         failed_sketch_builders = [
             builder for builder in failed_builders if isinstance(builder, BuildSketch)
@@ -174,17 +228,17 @@ def show_object(obj, name=None, options=None, **kwargs):
     if cq and isinstance(obj, cq.Workplane):
         if name is None:
             name = f"wp-{len(execution_context.cq_wp_objects)}"
-        cq_obj = CQWorkplane(obj, name=name, **kwargs)
-    elif bd and isinstance(obj, bd.Builder):
+        cq_obj = CQWorkplane(execution_context, obj, name=name, **kwargs)
+    elif b3d and isinstance(obj, b3d.Builder):
         if name is None:
             name = f"part-{len(execution_context.bp_objects)}"
         # TODO need to grab the actual object out
         # reference to obj is mutable..r
-        cq_obj = B123dBuildPart(obj, name=name, **kwargs)
+        cq_obj = B123dBuildPart(execution_context, obj, name=name, **kwargs)
     else:
         if name is None:
             name = f"obj-{len(execution_context.generic_objects)}"
-        cq_obj = DisplayObject(obj, name=name, **kwargs)
+        cq_obj = DisplayObject(execution_context, obj, name=name, **kwargs)
 
     execution_context.add_display_object(cq_obj)
 
