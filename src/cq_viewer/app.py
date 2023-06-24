@@ -5,7 +5,7 @@ from typing import Optional
 import cadquery as cq
 import wx
 from build123d import BuildLine
-from OCP.AIS import AIS_Shaded, AIS_Shape
+from OCP.AIS import AIS_Shaded, AIS_Shape, AIS_InteractiveObject
 from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import Quantity_Color, Quantity_NOC_PURPLE, Quantity_NOC_RED
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
@@ -89,16 +89,21 @@ class CQViewerContext:
         execution_context.decrement_wp_render_index(name)
         self.exec_and_display()
 
-    def exec_and_display(self, fit=False):
+    def exec_and_display(self, fit=False, reset_projection=False):
+        print("EXEC ADN DISPLAY")
         execution_context.reset()
         _locals = exec_file(self.file_path)
-        self.display(fit)
+        self.display(fit, reset_projection)
 
-    def display(self, fit=False):
+    def display(self, fit=False, reset_projection=False):
         # TODO this sucks too, pls fix
-
+        print("DISPLAY!!!")
         ctx = self.main_frame.canvas.context
+        view = self.main_frame.canvas.view
+        previous_immediate_update = view.SetImmediateUpdate(False)
         ctx.RemoveAll(False)
+        sketching = False
+        sketch_workplanes = []
         for cq_obj in execution_context.display_objects:
             if isinstance(cq_obj, CQWorkplane):
                 index = execution_context.cq_wp_render_index[cq_obj.name]
@@ -111,35 +116,65 @@ class CQViewerContext:
                 else:
                     compound = getattr(cq_obj.obj, "part", None)
 
-                    if getattr(cq_obj.obj, "pending_edges", None):
-                        self.display_pending_edges(cq_obj.obj.pending_edges)
+                    sketch = cq_obj.sketch
+                    if sketch:
+                        sketch_compound, sketch_workplane = sketch
+                        self.display_compound(sketch_compound)
+                        sketching = True
+                        sketch_workplanes.append(sketch_workplane)
 
-                    if getattr(cq_obj.obj, "pending_faces", None):
-                        self.display_pending_faces(cq_obj.obj.pending_faces)
-
-                    for failed_builder in getattr(cq_obj.obj, FAILED_BUILDERS_KEY, []):
-                        if failed_builder.pending_edges:
-                            print("Displaying failed builder pending edges")
-                            print("failed builder", failed_builder)
-                            self.display_pending_edges(failed_builder.pending_edges)
                     if compound is None:
                         continue
                     compound = compound.wrapped
+            elif isinstance(cq_obj.obj, AIS_InteractiveObject):
+                compound = None
+                ctx.Display(cq_obj.obj, False)
             else:
                 compound = cq.Compound.makeCompound(cq_obj.obj).wrapped
 
-            shape = AIS_Shape(compound)
-            shape.SetHilightMode(AIS_Shaded)
-            ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
-            style: Prs3d_Drawer = shape.HilightAttributes()
-            style.SetColor(Quantity_Color(Quantity_NOC_RED))
+            self.display_compound(compound)
+        if execution_context.bp_sketching != sketching:
+            if sketching:
+                print("Started sketching")
+                execution_context.bp_sketching = True
+                if execution_context.bp_autosketch and sketch_workplanes:
+                    sketch_workplane = sketch_workplanes[0]
+                    # self.view.SetProj(0, 0, 1)
+                    #         self.view.SetTwist(0)
+                    view.SetViewOrientationDefault()
+                    wp_ax = sketch_workplane.Axis().Direction()
+                    view.SetProj(wp_ax.X(), wp_ax.Y(), wp_ax.Z())
+                    view.SetTwist(0)
+                    fit = True
+                    reset_projection = False
 
-            ctx.Display(shape, False)
-            self.activate_selection(shape)
+            else:
+                print("Stopped sketching")
+                execution_context.bp_sketching = False
+                view = self.main_frame.canvas.view
+                view.Reset(False)
+                fit = True
+        if reset_projection:
+            self.isometric()
 
+        view.SetImmediateUpdate(previous_immediate_update)
         if fit:
-            self.fit_and_project()
+            self.fit()
         self.main_frame.canvas.viewer.Update()
+
+    def display_compound(self, compound, selectable=True):
+        if compound is None:
+            return
+        ctx = self.main_frame.canvas.context
+        shape = AIS_Shape(compound)
+        shape.SetHilightMode(AIS_Shaded)
+        ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
+        style: Prs3d_Drawer = shape.HilightAttributes()
+        style.SetColor(Quantity_Color(Quantity_NOC_RED))
+
+        ctx.Display(shape, False)
+        if selectable:
+            self.activate_selection(shape)
 
     def display_pending_edges(self, pending_edges):
         """build123d BuildLine"""
@@ -157,11 +192,17 @@ class CQViewerContext:
         ais.set_color(shape, Quantity_Color(Quantity_NOC_PURPLE))
         self.ctx.Display(shape, False)
 
-    def fit_and_project(self, x=1, y=-1, z=1):
+    def fit(self, x=1, y=-1, z=1):
+        view = self.main_frame.canvas.view
+        view.FitAll(0.2, False)
+
+    def isometric(self, fit=False):
         view = self.main_frame.canvas.view
         view.SetProj(1, -1, 1)
         view.SetTwist(0)
-        view.FitAll()
+
+        if fit:
+            self.fit()
 
     def activate_selection(self, ais_shape: AIS_Shape):
         ctx = self.main_frame.canvas.context

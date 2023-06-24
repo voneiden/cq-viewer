@@ -254,6 +254,7 @@ class MainFrame(wx.Frame):
         self.Layout()
         self.resize_timer = wx.Timer(self)
         self.startup_timer = wx.Timer(self)
+        self.file_reload_timer = wx.Timer(self)
 
         self.Bind(wx.EVT_SIZE, self.on_size)
         self.Bind(wx.EVT_TIMER, self.on_timer)
@@ -266,8 +267,10 @@ class MainFrame(wx.Frame):
     def on_timer(self, event):
         if event.GetTimer() == self.resize_timer:
             self.canvas.view.MustBeResized()
-        if event.GetTimer() == self.startup_timer:
+        elif event.GetTimer() == self.startup_timer:
             self.startup()
+        elif event.GetTimer() == self.file_reload_timer:
+            self.cq_viewer_ctx.exec_and_display()
 
     def startup(self):
         self.file_system_watcher = wx.FileSystemWatcher()
@@ -275,7 +278,7 @@ class MainFrame(wx.Frame):
 
         if self.cq_viewer_ctx.file_path:
             self.cq_viewer_ctx.watch_file()
-            self.cq_viewer_ctx.exec_and_display(fit=True)
+            self.cq_viewer_ctx.exec_and_display(fit=True, reset_projection=True)
 
     def on_size(self, event: wx.SizeEvent):
         self.resize_timer.Stop()
@@ -284,7 +287,8 @@ class MainFrame(wx.Frame):
 
     def on_fs_watcher(self, event: wx.FileSystemWatcherEvent):
         if event.GetChangeType() == wx.FSW_EVENT_MODIFY:
-            self.cq_viewer_ctx.exec_and_display()
+            self.file_reload_timer.Stop()
+            self.file_reload_timer.StartOnce(50)
         else:
             print("Unknown event type", event.GetChangeType())
 
@@ -301,6 +305,7 @@ class MainFrame(wx.Frame):
             self.cq_viewer_ctx.decrement_wp_render_index()
         elif code == 82:
             # r
-            self.cq_viewer_ctx.fit_and_project()
+            self.cq_viewer_ctx.isometric()
+            self.cq_viewer_ctx.fit()
         else:
             print(event.GetKeyCode())

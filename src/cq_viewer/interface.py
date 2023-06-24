@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Optional
 
 import wx
-from build123d import BuildSketch
+from build123d import BuildSketch, Compound
 from OCP.gp import gp_Pln
 from OCP.TopoDS import TopoDS_Compound
 
@@ -79,8 +79,17 @@ class B123dBuildPart(DisplayObject):
         if not builder:
             builder = self.obj
 
-        if builder.to_combine:
-            compound = builder.to_combine[0].wrapped
+        shapes = []
+        pending_faces = getattr(builder, "pending_faces", [])
+        pending_edges = getattr(builder, "pending_edges", [])
+
+        if pending_faces:
+            shapes += pending_faces
+        if pending_edges:
+            shapes += pending_edges
+
+        if shapes:
+            compound = Compound.make_compound(shapes).wrapped
         else:
             return None
 
@@ -97,9 +106,9 @@ class ExecutionContext:
     def __init__(self):
         self.display_objects: list[DisplayObject] = []
         self.cq_wp_render_index = defaultdict(lambda: 0)
-        self.bp_sketching = defaultdict(lambda: False)
-
-        self.restore_projection = None
+        self.bp_sketching = False
+        self.bp_autosketch = True
+        self.pre_sketch_projection = None
 
     def add_display_object(self, cq_obj: DisplayObject):
         self.display_objects.append(cq_obj)

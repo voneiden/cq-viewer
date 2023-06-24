@@ -8,7 +8,7 @@ from build123d import (
     Circle,
     Cylinder,
     Line,
-    extrude,
+    extrude, make_face,
 )
 
 from cq_viewer.interface import (
@@ -62,6 +62,16 @@ def test_b123d_sketching_detection(knife_build123d):
     assert B123dBuildPart(part, "test").sketch
     assert B123dBuildPart(part, "test").sketching
 
+    with BuildPart() as part:
+        with BuildSketch():
+            with BuildLine():
+                Line((0, 0), (1, 1))
+                Line((1, 1), (5, 1))
+                Line((5, 1), (2, 4))
+            make_face()
+        extrude(amount=3)
+
+    assert not B123dBuildPart(part, "test").sketch
 
 def test_b123d_part_parent_behaviour():
     with BuildPart() as part:
