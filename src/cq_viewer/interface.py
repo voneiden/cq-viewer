@@ -2,10 +2,9 @@ import inspect
 import logging
 import traceback
 from collections import defaultdict
-from typing import Optional
+from typing import Literal, Optional
 
 import wx
-from build123d import BuildSketch, Compound
 from OCP.AIS import AIS_InteractiveObject, AIS_Shape
 from OCP.gp import gp_Pln
 from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
@@ -95,8 +94,14 @@ class DisplayObject:
     def sketch(self):
         return None
 
+    @property
+    def active_plane(self) -> Optional[gp_Pln]:
+        return None
+
 
 class CQWorkplane(DisplayObject):
+    obj: "cq.Workplane"
+
     def __init__(self, context, obj, name, **options):
         super().__init__(context, obj, name, **options)
 
@@ -110,6 +115,9 @@ class CQWorkplane(DisplayObject):
         safe_index = min(max(0, index), len(self.wp_history) - 1)
         return self.wp_history[safe_index].objects
 
+    def active_plane(self):
+        return self.obj.plane.toPln()
+
 
 class B123dBuildPart(DisplayObject):
     obj: "b3d.Builder"
@@ -121,7 +129,9 @@ class B123dBuildPart(DisplayObject):
     def _failed_sketch_build(self) -> Optional["b3d.Builder"]:
         failed_builders = getattr(self.obj, FAILED_BUILDERS_KEY, [])
         failed_sketch_builders = [
-            builder for builder in failed_builders if isinstance(builder, BuildSketch)
+            builder
+            for builder in failed_builders
+            if isinstance(builder, b3d.BuildSketch)
         ]
         if failed_sketch_builders:
             return failed_sketch_builders[0]
@@ -140,20 +150,37 @@ class B123dBuildPart(DisplayObject):
         if pending_faces:
             shapes += pending_faces
         if pending_edges:
-            shapes += pending_edges
+            edge_compound = b3d.Compound.make_compound(pending_edges)
+            for workplane in builder.workplanes_context.workplanes:
+                shapes.append(workplane.from_local_coords(edge_compound))
 
         if shapes:
-            compound = Compound.make_compound(shapes).wrapped
-        else:
-            return None
+            return b3d.Compound.make_compound(shapes).wrapped, self.active_plane
 
-        workplanes = builder.workplanes_context.workplanes
-        if workplanes:
-            workplane: Optional[gp_Pln] = workplanes[0].wrapped
-        else:
-            workplane = None
+        return None
 
-        return compound, workplane
+    @property
+    def active_plane(self) -> Optional[gp_Pln]:
+        builder = self._failed_sketch_build
+        if not builder:
+            builder = self.obj
+
+        pending_edges = getattr(builder, "pending_edges", [])
+        pending_faces = getattr(builder, "pending_faces", [])
+        if pending_edges:
+            workplanes = builder.workplanes_context.workplanes
+            if len(workplanes) == 1:
+                return workplanes[0].wrapped
+        if pending_faces:
+            workplanes = builder.builder_children[-1].workplanes_context.workplanes
+            if len(workplanes) == 1:
+                return workplanes[0].wrapped
+        # TODO this needs to be a lot more robust
+        # workplanes = b3d.WorkplaneList(*pending_faces)
+        # zdirs = set((plane.z_dir.to_tuple() for plane in workplanes))
+        # if len(zdirs) == 1:
+        #    return workplanes.workplanes[0].wrapped
+        return None
 
 
 class ExecutionContext:
@@ -163,6 +190,7 @@ class ExecutionContext:
         self.bp_sketching = False
         self.bp_autosketch = True
         self.pre_sketch_projection = None
+        self.config = {}
 
     def add_display_object(self, cq_obj: DisplayObject):
         self.display_objects.append(cq_obj)
@@ -243,6 +271,10 @@ def show_object(obj, name=None, options=None, **kwargs):
     execution_context.add_display_object(cq_obj)
 
 
+def setup(*, projection: Literal["orthographic", "perspective"] = None):
+    execution_context.config = (lambda **kwargs: {**kwargs})(projection=projection)
+
+
 def exec_file(file_path):
     with open(file_path, "r") as f:
         ast = compile(f.read(), file_path, "exec")
@@ -278,6 +310,18 @@ def tb_file_names_and_linenos(tb):
     return [f"{frame.filename}:{frame.lineno} {frame.line}" for frame in stack]
 
 
+def monkeypatch_b123d_builder_init_factory():
+    from build123d.build_common import Builder
+
+    og_init = Builder.__init__
+
+    def monkeypatch_b123d_builder_init(self, *args, **kwargs):
+        og_init(self, *args, **kwargs)
+        self.builder_children = []
+
+    return monkeypatch_b123d_builder_init
+
+
 def monkeypatch_b123d_builder_exit_factory(win):
     from build123d.build_common import Builder
 
@@ -285,6 +329,11 @@ def monkeypatch_b123d_builder_exit_factory(win):
 
     def monkeypatch_b123d_builder_exit(self, exception_type, exception_value, tb):
         wx.SafeYield(win)
+        if self.builder_parent:
+            if not hasattr(self.builder_parent, "builder_children"):
+                self.builder_parent.builder_children = []
+            self.builder_parent.builder_children.append(self)
+
         if exception_type is not None:
             self._current.reset(self._reset_tok)
 
@@ -332,7 +381,7 @@ def knife_b123d(win):
     # NOTE: monkey patching __enter__ is not so straightforward
     # because it messes the `inspect.currentframe().f_back` hat trick
     # that build123d uses to keep track of build context
-
+    # Builder.__init__ = monkeypatch_b123d_builder_init_factory()
     Builder.__exit__ = monkeypatch_b123d_builder_exit_factory(win)
 
 

@@ -60,7 +60,7 @@ class V3dPanel(KeyboardHandlerMixin, wx.Panel):
         viewer.SetLightOn()
 
         ctx = self.context
-
+        ctx.SetAutoActivateSelection(False)
         ctx.SetDisplayMode(AIS_DisplayMode.AIS_Shaded, True)
         ctx.DefaultDrawer().SetFaceBoundaryDraw(True)
         # style: Prs3d_Drawer = ctx.SelectionStyle()
@@ -305,7 +305,6 @@ class MainFrame(wx.Frame):
             self.cq_viewer_ctx.decrement_wp_render_index()
         elif code == 82:
             # r
-            self.cq_viewer_ctx.isometric()
-            self.cq_viewer_ctx.fit()
+            self.cq_viewer_ctx.reset_view()
         else:
             print(event.GetKeyCode())

@@ -1,1 +1,1 @@
-from cq_viewer.interface import show_object, view
+from cq_viewer.interface import setup, show_object, view

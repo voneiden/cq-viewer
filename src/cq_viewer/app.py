@@ -4,8 +4,21 @@ from typing import Optional
 
 import wx
 from OCP.AIS import AIS_Shaded, AIS_Shape
+from OCP.Aspect import (
+    Aspect_GDM_Lines,
+    Aspect_GFM_HOR,
+    Aspect_GFM_VER,
+    Aspect_GT_Rectangular,
+)
+from OCP.gp import gp_Pln
+from OCP.Graphic3d import Graphic3d_Camera
 from OCP.Prs3d import Prs3d_Drawer
-from OCP.Quantity import Quantity_Color, Quantity_NOC_PURPLE, Quantity_NOC_RED
+from OCP.Quantity import (
+    Quantity_Color,
+    Quantity_NOC_PURPLE,
+    Quantity_NOC_RED,
+    Quantity_TOC_RGB,
+)
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Shape
 
@@ -83,7 +96,40 @@ class CQViewerContext:
         print("EXEC ADN DISPLAY")
         execution_context.reset()
         _locals = exec_file(self.file_path)
+        self.configure()
         self.display(fit, reset_projection)
+
+    def configure(self):
+        canvas = self.main_frame.canvas
+        ctx = canvas.context
+        view = canvas.view
+        viewer = canvas.viewer
+        config = execution_context.config
+
+        if projection := config.get("projection"):
+            if projection == "orthographic":
+                view.Camera().SetProjectionType(
+                    Graphic3d_Camera.Projection_Orthographic
+                )
+            elif projection == "perspective":
+                view.Camera().SetProjectionType(Graphic3d_Camera.Projection_Perspective)
+            else:
+                raise ValueError(f"Invalid projection: {projection}")
+
+        if bg_gradient := config.get("bg_gradient"):
+            # TODO
+            view.SetBgGradientColors(
+                Quantity_Color(0.8, 0.8, 0.898, Quantity_TOC_RGB),
+                Quantity_Color(0.0, 0.0, 0.0, Quantity_TOC_RGB),
+                Aspect_GFM_VER,
+                False,
+            )
+        elif bg := config.get("bg"):
+            view.SetBackgroundColor(Quantity_Color(*bg, Quantity_TOC_RGB))
+        else:
+            view.SetBackgroundColor(
+                Quantity_Color(0.117, 0.078, 0.368, Quantity_TOC_RGB)
+            )
 
     def display(self, fit=False, reset_projection=False):
         print("Display..")
@@ -96,35 +142,49 @@ class CQViewerContext:
         active_sketches = [sketch for sketch in sketch_states if sketch]
 
         if len(active_sketches) == 1:
+            sketching = True
             shape, plane = active_sketches[0]
             if not execution_context.bp_sketching:
                 print("Started sketching")
                 execution_context.bp_sketching = True
                 if execution_context.bp_autosketch and plane:
+                    execution_context.camera_scale = view.Camera().Scale()
                     view.SetViewOrientationDefault()
-                    wp_ax = plane.Axis().Direction()
-                    view.SetProj(wp_ax.X(), wp_ax.Y(), wp_ax.Z())
-                    view.SetTwist(0)
+                    plane: gp_Pln
+                    pos = plane.Position()
+                    pos.Direction()
+                    wp_dir = plane.Position().Direction().Reversed()
+                    wp_up = plane.Position().YDirection()
+                    view.Camera().SetDirection(wp_dir)
+                    view.Camera().SetUp(wp_up)
+                    # view.SetProj(-wp_ax.X(), -wp_ax.Y(), -wp_ax.Z())
+                    # TODO how to determine twist?
+                    # view.SetTwist(0)
                     fit = True
                     reset_projection = False
+                    self.show_grid(plane)
             self.display_ais_shape(AIS_Shape(shape))
         else:
-            if execution_context.bp_sketching:
-                print("Stopped sketching")
-                execution_context.bp_sketching = False
-                view = self.main_frame.canvas.view
-                view.Reset(False)
-                fit = True
+            sketching = False
 
-            # Default behaviour
-            for dp_obj in execution_context.display_objects:
-                ais_object = dp_obj.ais_object
+        if not sketching and execution_context.bp_sketching:
+            print("Stopped sketching")
+            execution_context.bp_sketching = False
+            self.hide_grid()
+            view.Reset(False)
+            view.Camera().SetScale(execution_context.camera_scale)
 
-                if ais_object:
-                    if isinstance(ais_object, AIS_Shape):
-                        self.display_ais_shape(ais_object)
-                    else:
-                        ctx.Display(ais_object, False)
+        # Default behaviour
+        for dp_obj in execution_context.display_objects:
+            ais_object = dp_obj.ais_object
+            transparency = 0.8 if sketching else None
+            if ais_object:
+                if isinstance(ais_object, AIS_Shape):
+                    self.display_ais_shape(
+                        ais_object, selectable=not sketching, transparency=transparency
+                    )
+                else:
+                    ctx.Display(ais_object, False)
 
         if reset_projection:
             self.isometric()
@@ -134,18 +194,43 @@ class CQViewerContext:
             self.fit()
         self.main_frame.canvas.viewer.Update()
 
-    def display_ais_shape(self, ais_shape: AIS_Shape, selectable=True):
+    def display_ais_shape(
+        self, ais_shape: AIS_Shape, selectable=True, transparency=None
+    ):
         if ais_shape is None:
             return
+
         ctx = self.main_frame.canvas.context
         ais_shape.SetHilightMode(AIS_Shaded)
-        ais.set_color(ais_shape, Quantity_Color(Quantity_NOC_PURPLE))
+        ais.set_color(
+            ais_shape,
+            Quantity_Color(0.5019607843137255, 0, 0.5019607843137255, Quantity_TOC_RGB),
+            transparency,
+        )
         style: Prs3d_Drawer = ais_shape.HilightAttributes()
         style.SetColor(Quantity_Color(Quantity_NOC_RED))
 
         ctx.Display(ais_shape, False)
         if selectable:
             self.activate_selection(ais_shape)
+
+    def show_grid(self, plane: gp_Pln):
+        viewer = self.main_frame.canvas.viewer
+        viewer.SetPrivilegedPlane(plane.Position())
+        viewer.SetRectangularGridValues(0, 0, 1, 1, 0)
+        # TODO determine the size of the grid?
+        # TODO some way to mod the grid with keyboard
+        viewer.SetRectangularGridGraphicValues(10, 10, 0)
+        viewer.ActivateGrid(Aspect_GT_Rectangular, Aspect_GDM_Lines)
+
+    def hide_grid(self):
+        viewer = self.main_frame.canvas.viewer
+        viewer.DeactivateGrid()
+
+    def reset_view(self):
+        if not execution_context.bp_sketching:
+            self.isometric()
+        self.fit()
 
     def fit(self):
         view = self.main_frame.canvas.view
@@ -159,9 +244,19 @@ class CQViewerContext:
         if fit:
             self.fit()
 
-    def activate_selection(self, ais_shape: AIS_Shape):
+    def deactivate_selection(self, ais_shape: AIS_Shape):
         ctx = self.main_frame.canvas.context
         ctx.Deactivate(ais_shape)
+        # ctx.SetSelectionModeActive(ais_shape, -1, False, AIS_SelectionModesConcurrency_Multiple)
+
+    def activate_selection(self, ais_shape: AIS_Shape):
+        self.deactivate_selection(ais_shape)
+        ctx = self.main_frame.canvas.context
+        ctx.Load(ais_shape)
+        # ctx.SetSelectionModeActive(ais_shape, ais_shape.SelectionMode_s(TopAbs_VERTEX), True, AIS_SelectionModesConcurrency_Multiple)
+        # ctx.SetSelectionModeActive(ais_shape, ais_shape.SelectionMode_s(TopAbs_EDGE), True, AIS_SelectionModesConcurrency_Multiple)
+        # ctx.SetSelectionModeActive(ais_shape, ais_shape.SelectionMode_s(TopAbs_FACE), True, AIS_SelectionModesConcurrency_Multiple)
+
         ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_VERTEX), True)
         ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_EDGE), True)
         ctx.Activate(ais_shape, ais_shape.SelectionMode_s(TopAbs_FACE), True)
