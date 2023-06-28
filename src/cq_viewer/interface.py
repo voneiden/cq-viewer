@@ -2,6 +2,7 @@ import inspect
 import logging
 import traceback
 from collections import defaultdict
+from types import ModuleType
 from typing import Literal, Optional
 
 import wx
@@ -10,6 +11,7 @@ from OCP.gp import gp_Pln
 from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
+from cq_viewer.managers import ImportManager, PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -276,12 +278,13 @@ def setup(*, projection: Literal["orthographic", "perspective"] = None):
 
 
 def exec_file(file_path):
-    with open(file_path, "r") as f:
-        ast = compile(f.read(), file_path, "exec")
-
-    _locals = {}
-    exec(ast, _locals)
-    return _locals
+    with ImportManager():
+        with PathManager(file_path):
+            with open(file_path, "r") as f:
+                ast = compile(f.read(), file_path, "exec")
+            module = ModuleType("__cq_viewer_exec__")
+            exec(ast, module.__dict__, module.__dict__)
+            return module.__dict__
 
 
 def knife_cq(win):
