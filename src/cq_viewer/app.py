@@ -9,10 +9,11 @@ from OCP.Aspect import (
     Aspect_GFM_HOR,
     Aspect_GFM_VER,
     Aspect_GT_Rectangular,
+    Aspect_TOL_SOLID,
 )
 from OCP.gp import gp_Pln
 from OCP.Graphic3d import Graphic3d_Camera
-from OCP.Prs3d import Prs3d_Drawer
+from OCP.Prs3d import Prs3d_Drawer, Prs3d_LineAspect
 from OCP.Quantity import (
     Quantity_Color,
     Quantity_NOC_PURPLE,
@@ -26,7 +27,7 @@ from cq_viewer import ais, wx_components
 from cq_viewer.interface import exec_file, execution_context, knife_b123d, knife_cq
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
-from cq_viewer.util import same_topods_vertex
+from cq_viewer.util import anti_color, highlight_color, same_topods_vertex
 from cq_viewer.wx_components import MainFrame
 
 logger = logging.getLogger(__name__)
@@ -202,13 +203,24 @@ class CQViewerContext:
 
         ctx = self.main_frame.canvas.context
         ais_shape.SetHilightMode(AIS_Shaded)
+        color = (0.5019607843137255, 0, 0.5019607843137255)
+        hilight_color = highlight_color(color, 0.05)
+        select_color = highlight_color(color, 0.1)
+
         ais.set_color(
             ais_shape,
-            Quantity_Color(0.5019607843137255, 0, 0.5019607843137255, Quantity_TOC_RGB),
+            Quantity_Color(*color, Quantity_TOC_RGB),
             transparency,
         )
-        style: Prs3d_Drawer = ais_shape.HilightAttributes()
-        style.SetColor(Quantity_Color(Quantity_NOC_RED))
+        selection_style: Prs3d_Drawer = ais_shape.HilightAttributes()
+        selection_style.SetColor(Quantity_Color(*select_color, Quantity_TOC_RGB))
+
+        highlight_style = ais_shape.DynamicHilightAttributes()
+        highlight_style.SetColor(Quantity_Color(*hilight_color, Quantity_TOC_RGB))
+        highlight_style.SetupOwnFaceBoundaryAspect()
+        # highlight_style.FaceBoundaryAspect().SetColor does not work :-(
+        # Make it at least a bit thicker..
+        highlight_style.FaceBoundaryAspect().SetWidth(2)
 
         ctx.Display(ais_shape, False)
         if selectable:
