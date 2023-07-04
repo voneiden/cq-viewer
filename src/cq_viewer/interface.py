@@ -10,7 +10,6 @@ from OCP.AIS import AIS_InteractiveObject, AIS_Shape
 from OCP.Quantity import Quantity_Color
 from OCP.gp import gp_Pln
 from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
-from cq_editor.cq_utils import to_occ_color
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
 from cq_viewer.managers import ImportManager, PathManager
