@@ -24,7 +24,6 @@ class PathManager:
     def __enter__(self):
         self.original_path = sys.path[:]
         sys.path.append(self.dir_name)
-        print("Sys path inside", sys.path)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
