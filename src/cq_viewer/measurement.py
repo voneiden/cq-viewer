@@ -37,9 +37,19 @@ from OCP.GProp import GProp_GProps
 from OCP.Prs3d import Prs3d_LineAspect
 from OCP.Quantity import Quantity_Color, Quantity_NOC_LIMEGREEN, Quantity_NOC_PURPLE
 from OCP.Standard import Standard_OutOfRange
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_ON, TopAbs_VERTEX
-from OCP.TopoDS import TopoDS_Edge, TopoDS_Face, TopoDS_Shape, TopoDS_Vertex
-from ocp_tessellate.ocp_utils import downcast_LUT
+from OCP.TopAbs import (
+    TopAbs_COMPOUND,
+    TopAbs_COMPSOLID,
+    TopAbs_EDGE,
+    TopAbs_FACE,
+    TopAbs_IN,
+    TopAbs_ON,
+    TopAbs_SHELL,
+    TopAbs_SOLID,
+    TopAbs_VERTEX,
+    TopAbs_WIRE,
+)
+from OCP.TopoDS import TopoDS, TopoDS_Edge, TopoDS_Face, TopoDS_Shape, TopoDS_Vertex
 from scipy.optimize import minimize
 
 min_line_aspect = Prs3d_LineAspect(
@@ -105,6 +115,18 @@ class Measurement:
     @classmethod
     def blank(cls, shapes=()):
         return Measurement(set(shapes), {}, [])
+
+
+downcast_LUT = {
+    TopAbs_VERTEX: TopoDS.Vertex_s,
+    TopAbs_EDGE: TopoDS.Edge_s,
+    TopAbs_WIRE: TopoDS.Wire_s,
+    TopAbs_FACE: TopoDS.Face_s,
+    TopAbs_SHELL: TopoDS.Shell_s,
+    TopAbs_SOLID: TopoDS.Solid_s,
+    TopAbs_COMPSOLID: TopoDS.CompSolid_s,
+    TopAbs_COMPOUND: TopoDS.Compound_s,
+}
 
 
 def create_measurement(*shapes: TopoDS_Shape):
