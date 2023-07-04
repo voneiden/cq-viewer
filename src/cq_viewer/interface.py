@@ -7,8 +7,10 @@ from typing import Literal, Optional
 
 import wx
 from OCP.AIS import AIS_InteractiveObject, AIS_Shape
+from OCP.Quantity import Quantity_Color
 from OCP.gp import gp_Pln
 from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
+from cq_editor.cq_utils import to_occ_color
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
 from cq_viewer.managers import ImportManager, PathManager
@@ -71,11 +73,23 @@ def extract_shape(obj) -> Optional[TopoDS_Shape]:
     raise ValueError(f"Unable to extract shape from {type(obj)}!")
 
 
+def color_str_to_quanity_color(color: str) -> Quantity_Color:
+    import OCP.Quantity as Quantity
+
+    if noc_color := getattr(Quantity, f"Quantity_NOC_{color.upper()}", None):
+        return Quantity_Color(noc_color)
+    raise ValueError(f"Unknown color {color}")
+
+
 class DisplayObject:
     def __init__(self, context, obj, name, **options):
         self.context = context
         self.obj = obj
         self.name = name
+        if color := options.get("color"):
+            if isinstance(color, str):
+                options["color"] = color_str_to_quanity_color(color)
+
         self.options = options
 
     @property

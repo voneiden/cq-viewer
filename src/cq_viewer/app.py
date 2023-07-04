@@ -178,11 +178,17 @@ class CQViewerContext:
         # Default behaviour
         for dp_obj in execution_context.display_objects:
             ais_object = dp_obj.ais_object
-            transparency = 0.8 if sketching else None
+            color = dp_obj.options.get("color")
+            transparency = (
+                0.8 if sketching else None or dp_obj.options.get("transparency")
+            )
             if ais_object:
                 if isinstance(ais_object, AIS_Shape):
                     self.display_ais_shape(
-                        ais_object, selectable=not sketching, transparency=transparency
+                        ais_object,
+                        selectable=not sketching,
+                        color=color,
+                        transparency=transparency,
                     )
                 else:
                     ctx.Display(ais_object, False)
@@ -196,31 +202,37 @@ class CQViewerContext:
         self.main_frame.canvas.viewer.Update()
 
     def display_ais_shape(
-        self, ais_shape: AIS_Shape, selectable=True, transparency=None
+        self, ais_shape: AIS_Shape, selectable=True, color=None, transparency=None
     ):
         if ais_shape is None:
             return
 
         ctx = self.main_frame.canvas.context
         ais_shape.SetHilightMode(AIS_Shaded)
-        color = (0.5019607843137255, 0, 0.5019607843137255)
+        color = color or Quantity_Color(
+            0.5019607843137255, 0, 0.5019607843137255, Quantity_TOC_RGB
+        )
         hilight_color = highlight_color(color, 0.05)
         select_color = highlight_color(color, 0.1)
 
         ais.set_color(
             ais_shape,
-            Quantity_Color(*color, Quantity_TOC_RGB),
+            color,
             transparency,
         )
         selection_style: Prs3d_Drawer = ais_shape.HilightAttributes()
-        selection_style.SetColor(Quantity_Color(*select_color, Quantity_TOC_RGB))
+        selection_style.SetColor(select_color)
+        ais_shape.Attributes().SetupOwnFaceBoundaryAspect()
+        ais_shape.Attributes().FaceBoundaryAspect().SetColor(
+            Quantity_Color(*anti_color(color), Quantity_TOC_RGB)
+        )
 
         highlight_style = ais_shape.DynamicHilightAttributes()
-        highlight_style.SetColor(Quantity_Color(*hilight_color, Quantity_TOC_RGB))
+        highlight_style.SetColor(hilight_color)
         highlight_style.SetupOwnFaceBoundaryAspect()
         # highlight_style.FaceBoundaryAspect().SetColor does not work :-(
         # Make it at least a bit thicker..
-        highlight_style.FaceBoundaryAspect().SetWidth(2)
+        highlight_style.FaceBoundaryAspect().SetWidth(4)
 
         ctx.Display(ais_shape, False)
         if selectable:
