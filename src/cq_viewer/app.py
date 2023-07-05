@@ -177,12 +177,12 @@ class CQViewerContext:
 
         # Default behaviour
         for dp_obj in execution_context.display_objects:
-            ais_object = dp_obj.ais_object
+            ais_objects = dp_obj.ais_objects
             color = dp_obj.options.get("color")
             transparency = (
                 0.8 if sketching else None or dp_obj.options.get("transparency")
             )
-            if ais_object:
+            for ais_object in ais_objects:
                 if isinstance(ais_object, AIS_Shape):
                     self.display_ais_shape(
                         ais_object,
@@ -209,9 +209,21 @@ class CQViewerContext:
 
         ctx = self.main_frame.canvas.context
         ais_shape.SetHilightMode(AIS_Shaded)
-        color = color or Quantity_Color(
-            0.5019607843137255, 0, 0.5019607843137255, Quantity_TOC_RGB
-        )
+        if not color:
+            if ais_shape.HasColor():
+                color = Quantity_Color()
+                ais_shape.Color(color)
+            else:
+                color = Quantity_Color(
+                    0.5019607843137255, 0, 0.5019607843137255, Quantity_TOC_RGB
+                )
+        if not transparency:
+            ais_transparency = ais_shape.Transparency()
+            if ais_transparency != 0:
+                transparency = ais_transparency
+        if transparency and (transparency < 0 or transparency > 1):
+            raise ValueError("Transparency must be between 0 and 1")
+
         hilight_color = highlight_color(color, 0.05)
         select_color = highlight_color(color, 0.1)
 

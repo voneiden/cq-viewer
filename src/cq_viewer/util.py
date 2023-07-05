@@ -1,8 +1,8 @@
 from typing import Union
 
 import cadquery as cq
-from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 from cadquery.occ_impl.shapes import downcast_LUT
+from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 from OCP.TopoDS import TopoDS_Shape
 
 

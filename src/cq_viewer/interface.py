@@ -6,9 +6,10 @@ from types import ModuleType
 from typing import Literal, Optional
 
 import wx
+from cq_editor.cq_utils import to_occ_color
 from OCP.AIS import AIS_InteractiveObject, AIS_Shape
-from OCP.Quantity import Quantity_Color
 from OCP.gp import gp_Pln
+from OCP.Quantity import Quantity_Color
 from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
@@ -72,6 +73,48 @@ def extract_shape(obj) -> Optional[TopoDS_Shape]:
     raise ValueError(f"Unable to extract shape from {type(obj)}!")
 
 
+def extract_ais_shapes(obj) -> list[AIS_Shape]:
+    if obj is None:
+        return []
+
+    if isinstance(obj, TopoDS_Shape):
+        return [AIS_Shape(obj)]
+
+    if isinstance(obj, (list, tuple)):
+        return [
+            sub_shape
+            for _sub_shapes in [extract_ais_shapes(item) for item in obj]
+            for sub_shape in _sub_shapes
+        ]
+
+    if b3d:
+        if isinstance(obj, b3d.Shape):
+            if obj.children:
+                return extract_ais_shapes(obj.children)
+
+            shape = AIS_Shape(obj.wrapped)
+            if obj.color:
+                shape.SetColor(obj.color.wrapped.GetRGB())
+                shape.SetTransparency(obj.color.wrapped.Alpha())
+
+            # TODO material
+
+            return [shape]
+        elif isinstance(obj, b3d.ShapeList):
+            return extract_ais_shapes(list(obj))
+
+        elif isinstance(obj, b3d.BuildPart):
+            return extract_ais_shapes(obj.part)
+
+    if cq:
+        if isinstance(obj, cq.Workplane):
+            return extract_ais_shapes(obj.objects)
+        if isinstance(obj, cq.Shape):
+            return obj.wrapped
+
+    raise ValueError(f"Unable to extract shape from {type(obj)}!")
+
+
 def color_str_to_quanity_color(color: str) -> Quantity_Color:
     import OCP.Quantity as Quantity
 
@@ -92,18 +135,11 @@ class DisplayObject:
         self.options = options
 
     @property
-    def shape(self) -> TopoDS_Shape:
-        return extract_shape(self.obj)
-
-    @property
-    def ais_object(self) -> Optional[AIS_InteractiveObject]:
+    def ais_objects(self) -> list[AIS_InteractiveObject]:
         if isinstance(self.obj, AIS_InteractiveObject):
-            return self.obj
-        shape = self.shape
-        if shape:
-            ais_shape = AIS_Shape(shape)
-            return ais_shape
-        return None
+            return [self.obj]
+
+        return extract_ais_shapes(self.obj)
 
     @property
     def sketch(self):
