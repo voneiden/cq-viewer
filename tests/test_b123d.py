@@ -8,6 +8,8 @@ from build123d import (
     Circle,
     Cylinder,
     Line,
+    Plane,
+    Rectangle,
     extrude,
     make_face,
 )
@@ -22,8 +24,10 @@ from cq_viewer.interface import (
 
 @pytest.fixture
 def knife_build123d(monkeypatch):
-    builder_exit = monkeypatch_b123d_builder_exit_factory(None)
+    builder_exit = monkeypatch_b123d_builder_exit_factory(None, Builder.__exit__)
+    # build_line_exit = monkeypatch_b123d_builder_exit_factory(None, BuildLine.__exit__)
     monkeypatch.setattr(Builder, "__exit__", builder_exit)
+    # monkeypatch.setattr(BuildLine, "__exit__", build_line_exit)
 
 
 def test_b123d_unfinished_line_builder():
@@ -81,3 +85,43 @@ def test_b123d_part_parent_behaviour():
 
     assert part.builder_parent is None
     assert part2.builder_parent is None
+
+
+def test_b123d_collect_pending(knife_build123d):
+    from cq_viewer.util import collect_b3d_builder_pending as collect
+
+    with BuildPart() as part1:
+        with BuildSketch():
+            with BuildLine():
+                Line((0, 0), (1, 1))
+
+    result = collect(part1)
+    assert len(result) == 1
+    assert len(result[0][0]) == 0
+    assert len(result[0][1]) == 1
+    assert len(result[0][2]) == 1
+
+    with BuildPart() as part2:
+        with BuildSketch():
+            Rectangle(5, 5)
+            with BuildLine():
+                Line((0, 0), (1, 1))
+
+    result = collect(part2)
+    assert len(result) == 2
+    assert len(result[0][0]) == 1
+    assert len(result[0][1]) == 0
+    assert len(result[0][2]) == 1
+    assert len(result[1][0]) == 0
+    assert len(result[1][1]) == 1
+    assert len(result[1][2]) == 1
+
+    with BuildPart() as part3:
+        with BuildSketch(Plane.XZ) as sketch3:
+            Rectangle(5, 5)
+
+    result = collect(part3)
+    assert len(result) == 1
+    assert len(result[0][0]) == 1
+    assert len(result[0][1]) == 0
+    assert len(result[0][2]) == 1

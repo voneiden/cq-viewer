@@ -27,7 +27,13 @@ from cq_viewer import ais, wx_components
 from cq_viewer.interface import exec_file, execution_context, knife_b123d, knife_cq
 from cq_viewer.measurement import Measurement, create_measurement, create_midpoint
 from cq_viewer.str_enum import StrEnum
-from cq_viewer.util import anti_color, highlight_color, same_topods_vertex
+from cq_viewer.util import (
+    anti_color,
+    color_str_to_quantity_color,
+    highlight_color,
+    pending_contains_edges,
+    same_topods_vertex,
+)
 from cq_viewer.wx_components import MainFrame
 
 logger = logging.getLogger(__name__)
@@ -94,7 +100,7 @@ class CQViewerContext:
         self.exec_and_display()
 
     def exec_and_display(self, fit=False, reset_projection=False):
-        print("EXEC ADN DISPLAY")
+        print("EXEC & DISPLAY")
         execution_context.reset()
         _locals = exec_file(self.file_path)
         self.configure()
@@ -139,16 +145,23 @@ class CQViewerContext:
         previous_immediate_update = view.SetImmediateUpdate(False)
         ctx.RemoveAll(False)
 
-        sketch_states = [dp_obj.sketch for dp_obj in execution_context.display_objects]
-        active_sketches = [sketch for sketch in sketch_states if sketch]
+        all_sketches = [dp_obj.sketch for dp_obj in execution_context.display_objects]
+        active_sketches = [
+            sketch
+            for obj_sketches in [
+                obj_sketches for obj_sketches in all_sketches if obj_sketches
+            ]
+            for sketch in obj_sketches
+        ]
+        contains_edges = pending_contains_edges(active_sketches)
 
-        if len(active_sketches) == 1:
-            sketching = True
-            shape, plane = active_sketches[0]
+        if active_sketches:
             if not execution_context.bp_sketching:
-                print("Started sketching")
-                execution_context.bp_sketching = True
-                if execution_context.bp_autosketch and plane:
+                planes = active_sketches[-1][2]
+                if execution_context.bp_autosketch and len(planes) == 1:
+                    print("Started sketching")
+                    execution_context.bp_sketching = True
+                    plane = planes[0]
                     execution_context.camera_scale = view.Camera().Scale()
                     view.SetViewOrientationDefault()
                     plane: gp_Pln
@@ -164,7 +177,19 @@ class CQViewerContext:
                     fit = True
                     reset_projection = False
                     self.show_grid(plane)
-            self.display_ais_shape(AIS_Shape(shape))
+
+        if active_sketches:
+            sketching = True
+            face_display_kwargs = (
+                {"transparency": 0.8, "color": color_str_to_quantity_color("blue")}
+                if contains_edges
+                else {}
+            )
+            for faces, edges, _ in active_sketches:
+                for face in faces:
+                    self.display_ais_shape(AIS_Shape(face), **face_display_kwargs)
+                for edge in edges:
+                    self.display_ais_shape(AIS_Shape(edge))
         else:
             sketching = False
 
@@ -223,7 +248,6 @@ class CQViewerContext:
                 transparency = ais_transparency
         if transparency and (transparency < 0 or transparency > 1):
             raise ValueError("Transparency must be between 0 and 1")
-
         hilight_color = highlight_color(color, 0.05)
         select_color = highlight_color(color, 0.1)
 

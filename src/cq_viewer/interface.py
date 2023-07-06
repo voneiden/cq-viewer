@@ -6,14 +6,13 @@ from types import ModuleType
 from typing import Literal, Optional
 
 import wx
-from cq_editor.cq_utils import to_occ_color
 from OCP.AIS import AIS_InteractiveObject, AIS_Shape
 from OCP.gp import gp_Pln
-from OCP.Quantity import Quantity_Color
-from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Shape
+from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound, TopoDS_Face, TopoDS_Shape
 
 from cq_viewer.conf import FAILED_BUILDERS_KEY
 from cq_viewer.managers import ImportManager, PathManager
+from cq_viewer.util import collect_b3d_builder_pending, color_str_to_quantity_color
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +114,6 @@ def extract_ais_shapes(obj) -> list[AIS_Shape]:
     raise ValueError(f"Unable to extract shape from {type(obj)}!")
 
 
-def color_str_to_quanity_color(color: str) -> Quantity_Color:
-    import OCP.Quantity as Quantity
-
-    if noc_color := getattr(Quantity, f"Quantity_NOC_{color.upper()}", None):
-        return Quantity_Color(noc_color)
-    raise ValueError(f"Unknown color {color}")
-
-
 class DisplayObject:
     def __init__(self, context, obj, name, **options):
         self.context = context
@@ -130,7 +121,7 @@ class DisplayObject:
         self.name = name
         if color := options.get("color"):
             if isinstance(color, str):
-                options["color"] = color_str_to_quanity_color(color)
+                options["color"] = color_str_to_quantity_color(color)
 
         self.options = options
 
@@ -143,10 +134,6 @@ class DisplayObject:
 
     @property
     def sketch(self):
-        return None
-
-    @property
-    def active_plane(self) -> Optional[gp_Pln]:
         return None
 
 
@@ -165,9 +152,6 @@ class CQWorkplane(DisplayObject):
     def objects_by_index(self, index):
         safe_index = min(max(0, index), len(self.wp_history) - 1)
         return self.wp_history[safe_index].objects
-
-    def active_plane(self):
-        return self.obj.plane.toPln()
 
 
 class B123dBuildPart(DisplayObject):
@@ -189,49 +173,10 @@ class B123dBuildPart(DisplayObject):
         return None
 
     @property
-    def sketch(self) -> Optional[tuple[TopoDS_Compound, Optional[gp_Pln]]]:
-        builder = self._failed_sketch_build
-        if not builder:
-            builder = self.obj
-
-        shapes = []
-        pending_faces = getattr(builder, "pending_faces", [])
-        pending_edges = getattr(builder, "pending_edges", [])
-
-        if pending_faces:
-            shapes += pending_faces
-        if pending_edges:
-            edge_compound = b3d.Compound.make_compound(pending_edges)
-            for workplane in builder.workplanes_context.workplanes:
-                shapes.append(workplane.from_local_coords(edge_compound))
-
-        if shapes:
-            return b3d.Compound.make_compound(shapes).wrapped, self.active_plane
-
-        return None
-
-    @property
-    def active_plane(self) -> Optional[gp_Pln]:
-        builder = self._failed_sketch_build
-        if not builder:
-            builder = self.obj
-
-        pending_edges = getattr(builder, "pending_edges", [])
-        pending_faces = getattr(builder, "pending_faces", [])
-        if pending_edges:
-            workplanes = builder.workplanes_context.workplanes
-            if len(workplanes) == 1:
-                return workplanes[0].wrapped
-        if pending_faces:
-            workplanes = builder.builder_children[-1].workplanes_context.workplanes
-            if len(workplanes) == 1:
-                return workplanes[0].wrapped
-        # TODO this needs to be a lot more robust
-        # workplanes = b3d.WorkplaneList(*pending_faces)
-        # zdirs = set((plane.z_dir.to_tuple() for plane in workplanes))
-        # if len(zdirs) == 1:
-        #    return workplanes.workplanes[0].wrapped
-        return None
+    def sketch(
+        self,
+    ) -> Optional[list[tuple[list[TopoDS_Face], list[TopoDS_Compound], list[gp_Pln]]]]:
+        return collect_b3d_builder_pending(self.obj)
 
 
 class ExecutionContext:
@@ -374,11 +319,7 @@ def monkeypatch_b123d_builder_init_factory():
     return monkeypatch_b123d_builder_init
 
 
-def monkeypatch_b123d_builder_exit_factory(win):
-    from build123d.build_common import Builder
-
-    og_exit = Builder.__exit__
-
+def monkeypatch_b123d_builder_exit_factory(win, og_exit):
     def monkeypatch_b123d_builder_exit(self, exception_type, exception_value, tb):
         wx.SafeYield(win)
         if self.builder_parent:
@@ -419,6 +360,13 @@ def monkeypatch_b123d_builder_exit_factory(win):
     return monkeypatch_b123d_builder_exit
 
 
+# def monkeypatch_b123d_build_line_exit_factory():
+#    from build123d.build_line import BuildLine
+#    og_exit = BuildLine.__exit__
+#
+#    def monkeypatched_exit(self, exception_type, )
+
+
 def knife_b123d(win):
     """
     Tweak build123d
@@ -430,11 +378,14 @@ def knife_b123d(win):
     """
     from build123d.build_common import Builder
 
+    # from build123d.build_line import BuildLine
     # NOTE: monkey patching __enter__ is not so straightforward
     # because it messes the `inspect.currentframe().f_back` hat trick
     # that build123d uses to keep track of build context
     # Builder.__init__ = monkeypatch_b123d_builder_init_factory()
-    Builder.__exit__ = monkeypatch_b123d_builder_exit_factory(win)
+    Builder.__exit__ = monkeypatch_b123d_builder_exit_factory(win, Builder.__exit__)
+    # Don't necessarily need to knife BuildLine as it does not store pending edges
+    # BuildLine.__exit__ = monkeypatch_b123d_builder_exit_factory(win, BuildLine.__exit__)
 
 
 def view():
