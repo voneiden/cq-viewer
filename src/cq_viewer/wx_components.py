@@ -243,7 +243,6 @@ class MainFrame(wx.Frame):
         self.info_panel = InfoPanel(self, cq_viewer_ctx)
 
         print("info panel win id", self.info_panel.GetHandle())
-        self.Maximize(True)
 
         self.sizer = wx.BoxSizer(wx.VERTICAL)
         self.sizer.Add(self.canvas, 1, flag=wx.EXPAND | wx.ALL)
