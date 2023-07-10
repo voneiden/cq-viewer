@@ -281,8 +281,9 @@ class MainFrame(wx.Frame):
 
     def on_size(self, event: wx.SizeEvent):
         self.resize_timer.Stop()
-        self.resize_timer.StartOnce(50)
         self.Layout()
+        self.resize_timer.StartOnce(50)
+
 
     def on_fs_watcher(self, event: wx.FileSystemWatcherEvent):
         if event.GetChangeType() == wx.FSW_EVENT_MODIFY:
