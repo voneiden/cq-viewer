@@ -89,7 +89,9 @@ def extract_ais_shapes(obj) -> list[AIS_Shape]:
     if b3d:
         if isinstance(obj, b3d.Shape):
             if obj.children:
-                return extract_ais_shapes(obj.children)
+                location = obj.location
+                moved_children = [child.moved(location) for child in obj.children]
+                return extract_ais_shapes(moved_children)
 
             shape = AIS_Shape(obj.wrapped)
             if obj.color:
@@ -276,7 +278,7 @@ def exec_file(file_path):
         with PathManager(file_path):
             with open(file_path, "r") as f:
                 ast = compile(f.read(), file_path, "exec")
-            module = ModuleType("__cq_viewer_exec__")
+            module = ModuleType("__cq_viewer__")
             exec(ast, module.__dict__, module.__dict__)
             return module.__dict__
 
