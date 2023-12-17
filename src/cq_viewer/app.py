@@ -1,23 +1,20 @@
 import logging
 import pathlib
+import os
 from typing import Optional
 
 import wx
 from OCP.AIS import AIS_Shaded, AIS_Shape
 from OCP.Aspect import (
     Aspect_GDM_Lines,
-    Aspect_GFM_HOR,
     Aspect_GFM_VER,
     Aspect_GT_Rectangular,
-    Aspect_TOL_SOLID,
 )
 from OCP.gp import gp_Pln
 from OCP.Graphic3d import Graphic3d_Camera
-from OCP.Prs3d import Prs3d_Drawer, Prs3d_LineAspect
+from OCP.Prs3d import Prs3d_Drawer
 from OCP.Quantity import (
     Quantity_Color,
-    Quantity_NOC_PURPLE,
-    Quantity_NOC_RED,
     Quantity_TOC_RGB,
 )
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
@@ -74,9 +71,13 @@ class CQViewerContext:
         self.main_frame.file_system_watcher.Add(str(self.file_path))
 
     def open_file(self) -> Optional[pathlib.Path]:
+        current_file_path = self.config.Read(ConfigKey.FILE_PATH, "")
+        current_dir = os.path.dirname(current_file_path) if current_file_path else ""
+
         with wx.FileDialog(
             self.main_frame,
-            "Open CQ file",
+            message="Open CQ file",
+            defaultDir=current_dir,
             wildcard="Python files (*.py)|*.py",
             style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
         ) as fileDialog:

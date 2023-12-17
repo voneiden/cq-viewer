@@ -284,7 +284,6 @@ class MainFrame(wx.Frame):
         self.Layout()
         self.resize_timer.StartOnce(50)
 
-
     def on_fs_watcher(self, event: wx.FileSystemWatcherEvent):
         if event.GetChangeType() == wx.FSW_EVENT_MODIFY:
             self.file_reload_timer.Stop()
