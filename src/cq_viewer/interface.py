@@ -111,7 +111,11 @@ def extract_ais_shapes(obj) -> list[AIS_Shape]:
         if isinstance(obj, cq.Workplane):
             return extract_ais_shapes(obj.objects)
         if isinstance(obj, cq.Shape):
-            return obj.wrapped
+            shape = AIS_Shape(obj.wrapped)
+            if hasattr(obj, "color"):
+                shape.SetColor(obj.color.wrapped.GetRGB())
+                shape.SetTransparency(obj.color.wrapped.Alpha())
+            return [shape]
 
     raise ValueError(f"Unable to extract shape from {type(obj)}!")
 
