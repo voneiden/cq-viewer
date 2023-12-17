@@ -1,22 +1,15 @@
 import logging
-import pathlib
 import os
+import pathlib
 from typing import Optional
 
 import wx
 from OCP.AIS import AIS_Shaded, AIS_Shape
-from OCP.Aspect import (
-    Aspect_GDM_Lines,
-    Aspect_GFM_VER,
-    Aspect_GT_Rectangular,
-)
+from OCP.Aspect import Aspect_GDM_Lines, Aspect_GFM_VER, Aspect_GT_Rectangular
 from OCP.gp import gp_Pln
 from OCP.Graphic3d import Graphic3d_Camera
 from OCP.Prs3d import Prs3d_Drawer
-from OCP.Quantity import (
-    Quantity_Color,
-    Quantity_TOC_RGB,
-)
+from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Shape
 
