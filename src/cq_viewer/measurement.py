@@ -10,7 +10,7 @@ import sys
 from typing import Callable, Optional
 
 import cadquery as cq
-from numpy import NaN, inf
+from numpy import inf
 from OCP.AIS import AIS_InteractiveObject, AIS_Line, AIS_Shape
 from OCP.Aspect import Aspect_TOL_DASH, Aspect_TOL_DOT
 from OCP.BRep import BRep_Tool
