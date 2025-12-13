@@ -237,6 +237,7 @@ class MainFrame(wx.Frame):
         self.resize_timer = wx.Timer(self)
         self.startup_timer = wx.Timer(self)
         self.file_reload_timer = wx.Timer(self)
+        self.file_deleted = False
 
         self.Bind(wx.EVT_SIZE, self.on_size)
         self.Bind(wx.EVT_TIMER, self.on_timer)
@@ -252,6 +253,9 @@ class MainFrame(wx.Frame):
         elif event.GetTimer() == self.startup_timer:
             self.startup()
         elif event.GetTimer() == self.file_reload_timer:
+            if self.file_deleted:
+                self.cq_viewer_ctx.watch_file()
+                self.file_deleted = False
             self.cq_viewer_ctx.exec_and_display()
 
     def startup(self):
@@ -271,6 +275,14 @@ class MainFrame(wx.Frame):
         if event.GetChangeType() == wx.FSW_EVENT_MODIFY:
             self.file_reload_timer.Stop()
             self.file_reload_timer.StartOnce(50)
+        elif event.GetChangeType() == wx.FSW_EVENT_DELETE:
+            # Some editors have atomic save where the file is first saved
+            # into a temporary file, flushed, then the original file is deleted
+            # and the new file is renamed to the original filename.
+            self.file_deleted = True
+            self.file_reload_timer.Stop()
+            self.file_reload_timer.StartOnce(50)
+
         else:
             print("Unknown event type", event.GetChangeType())
 
