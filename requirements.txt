@@ -6,11 +6,9 @@
 #
 attrdict3==2.0.2
     # via -r requirements.in
-numpy==2.3.2
+numpy==2.3.5
     # via wxpython
-six==1.16.0
-    # via
-    #   attrdict3
-    #   wxpython
-wxpython==4.2.2
+six==1.17.0
+    # via attrdict3
+wxpython==4.2.4
     # via -r requirements.in
